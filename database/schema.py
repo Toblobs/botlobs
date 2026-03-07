@@ -1,4 +1,4 @@
-# database > schema.py // @toblobs // 04.03.26
+# database > schema.py // @toblobs // 07.03.26
 
 from .__init__ import *
 import aiosqlite
@@ -66,6 +66,11 @@ async def create_tables():
         timestamp INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS customs (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER,
+        tie_color TEXT
+    );
     """)
 
     await db.conn.commit() 

@@ -1,4 +1,4 @@
-# database > xp.py // @toblobs // 05.03.26
+# database > xp.py // @toblobs // 07.03.26
 
 from .__init__ import *
 
@@ -8,6 +8,7 @@ from discord.ext import commands
 import numpy as np
 
 from .dbio import db
+from .sync import sync_roles
 
 async def log_message(user_id: int, channel_id: int, xp: int):
 
@@ -143,9 +144,19 @@ async def set_xp(user_id, xp):
         level=?
     """, (user_id, xp, level, xp, level))
 
-async def level_up(member: discord.Member, level: int, bot: commands.Bot):
+async def level_up(member: discord.Member, current_xp: int, level: int, bot: commands.Bot):
 
-    pass
+    xp_cog = bot.get_cog("XPCommands")
+
+    full_xp_to_next = xp_required(level = level + 1) - xp_required(level = level)
+    xp_gained = current_xp - xp_required(level = level)
+    xp_to_next = (full_xp_to_next )- xp_gained
+
+    obtained_roles = (await sync_roles(member, level, bot))[0]
+
+    await xp_cog.level_up_message(member = member, level = level, # type: ignore
+    current_xp = current_xp, xp_gained = xp_gained, full_xp_to_next = full_xp_to_next,
+    xp_to_next = xp_to_next, obtained_roles = obtained_roles)
 
 def get_member_cooldown(member: discord.Member):
 
@@ -231,11 +242,11 @@ async def process_message(message: discord.Message, bot: commands.Bot):
 
     if new_level > old_level:
 
-        await level_up(message.author, new_level, bot) # type: ignore
+        await level_up(message.author, new_xp, new_level, bot) # type: ignore
 
 async def import_xp():
 
-    with open(r"/home/toblobs/botlobs/database/frozen-xp.txt") as f:
+    with open(r"C:\Users\Tobil\Documents\botlobs\database\frozen-xp.txt") as f:
 
         for line in f:
 

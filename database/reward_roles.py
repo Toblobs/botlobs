@@ -1,4 +1,4 @@
-# database > reward_roles.py // @toblobs // 04.03.26
+# database > reward_roles.py // @toblobs // 07.03.26
 
 from .__init__ import *
 
@@ -39,3 +39,38 @@ async def get_syncable_roles():
 
     rows = await cur.fetchall()
     return [r[0] for r in rows]
+
+async def add_custom(role_id: int, user_id: int, tie_color: str):
+
+    cur = await db.conn.execute("""
+        INSERT INTO customs(id,user_id,tie_color)
+        VALUES (?,?,?)
+        ON CONFLICT(id)
+        DO NOTHING
+    """, (role_id, user_id, tie_color))
+
+async def remove_custom(role_id: int):
+    
+    cur = await db.conn.execute("""
+        DELETE FROM customs
+        WHERE id=?
+    """, (role_id,))
+
+async def get_custom(role_id: int):
+
+    cur = await db.conn.execute("""
+        SELECT id, user_id, tie_color
+        FROM customs
+        WHERE id=?
+    """, (role_id,))
+
+    return await cur.fetchone()
+    
+async def get_all_customs():
+
+    cur = await db.conn.execute("""
+        SELECT id, user_id, tie_color
+        FROM customs
+        """)
+    
+    return await cur.fetchall() # format id | user_id | tie_color

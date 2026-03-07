@@ -1,12 +1,20 @@
-# cogs > __init__.py // @toblobs // 04.03.26
+# cogs > __init__.py // @toblobs // 07.03.26
 
 import os
+import io
+import re
 
 import discord
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
 from discord.ext import commands
 import numpy
 
 from dotenv import load_dotenv
+
+from .utils.embeds import basic_embed
+from PIL import Image
 
 DEFAULT_COLOR = discord.Color.from_rgb(183, 117, 219)
 
@@ -35,3 +43,48 @@ def get_top_colored_role(member: discord.Member):
             break
 
     return top_colored_role
+
+async def get_icon_binary(icon) -> bytes | None:
+
+    if icon:
+
+        if icon.size > 256 * 1024:
+            raise ValueError("Image provided is too large (max `256` kilobytes).")
+
+        img = Image.open(io.BytesIO(await icon.read())) 
+
+        if img.size != (64, 64):
+            raise ValueError(f"Image provided must be `64`x`64` pixels.")
+        
+        with io.BytesIO() as image_binary:
+
+            img.save(image_binary, format = "PNG")
+            image_binary.seek(0)
+            return image_binary.getvalue()
+
+    else:
+
+        return None
+    
+def parse_time_string(time_str: str) -> int:
+         
+    now = datetime.now()
+    
+    kwargs = {"years": 0, "months": 0, "weeks": 0, "days": 0, "hours": 0, "minutes": 0, "seconds": 0}
+    TIME_PATTERN = re.compile(r"(\d+)(y|mo|w|d|h|m|s)")
+    
+    matches = TIME_PATTERN.findall(time_str.lower())
+    if not matches: raise ValueError("Invalid time format. Examples: `1h30m`, `2d`, `3mo4w`")
+    
+    for value, unit in matches:
+        value = int(value)
+        
+        if unit == "y": kwargs["years"] += value
+        elif unit == "mo": kwargs["months"] += value
+        elif unit == "w": kwargs["weeks"] += value
+        elif unit == "d": kwargs["days"] += value
+        elif unit == "h": kwargs["hours"] += value
+        elif unit == "m": kwargs["minutes"] += value
+        elif unit == "s": kwargs["seconds"] += value
+    
+    return relativedelta(**kwargs) # type: ignore

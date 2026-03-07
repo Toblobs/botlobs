@@ -1,6 +1,6 @@
-# __init__.py // @toblobs // 03.03.26
+# __init__.py // @toblobs // 07.03.26
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 import os
 import numpy

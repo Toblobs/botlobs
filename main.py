@@ -1,12 +1,21 @@
-# main.py // @toblobs // 05.03.26
+# main.py // @toblobs // 07.03.26
 
 from __init__ import *
+
+import traceback
+import asyncio
+
 from cogs.general_commands import GeneralCommands
 from cogs.xp_commands import XPCommands
+from cogs.staff_commands import StaffCommands
 
-from database import XP_ENABLED, dbio, leaderboard, rank, reward_roles, schema, sync, users, xp
+from cogs.utils.embeds import basic_embed
+from database import XP_ENABLED, dbio, schema, xp, reminders
 intents = discord.Intents.all()
 intents.typing = False
+
+import logging
+logging.basicConfig(level=logging.INFO)
 
 #flags = discord.ApplicationFlags()
 
@@ -27,12 +36,39 @@ async def on_message(message):
     
     await xp.process_message(message, bot)
 
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    
+    traceback.print_exception(type(error), error, error.__traceback__)
+    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+    toblobs = guild.get_role(1139118721022046289) # type: ignore
+    
+    thumbnail_link = f"https://twemoji.maxcdn.com/v/latest/72x72/{ord("❗"):x}.png"
+    
+    try:
+        
+        if interaction.response.is_done():
+            await interaction.followup.send(f"{toblobs.mention}", embed = basic_embed(title = "Error Encountered!", description = f"⚠️ An error occurred, {toblobs.mention} will check logs when possible.", bot = bot, thumbnail = thumbnail_link), allowed_mentions = discord.AllowedMentions(roles = True, users = True)) # type: ignore
+        
+        else:
+            await interaction.response.send_message(f"{toblobs.mention}", embed = basic_embed(title = "Error Encountered!", description = f"⚠️ An error occurred, {toblobs.mention} will check logs when possible.", bot = bot, thumbnail = thumbnail_link), allowed_mentions = discord.AllowedMentions(roles = True, users = True)) # type: ignore
+    
+    except: 
+        
+        pass
+    
+
+wakeup = asyncio.Event()
+
 @bot.event
 async def on_ready():
+    
+    global wakeup
 
     # Add cogs
-    await bot.add_cog(GeneralCommands(bot))
+    await bot.add_cog(GeneralCommands(bot, wakeup))
     await bot.add_cog(XPCommands(bot))
+    await bot.add_cog(StaffCommands(bot))
 
     # Sync tree
     await bot.tree.sync()
@@ -40,6 +76,8 @@ async def on_ready():
     print("[!] Connected to Discord")
 
 async def main():
+    
+    global wakeup
 
     # Start DB
     await dbio.db.connect()
@@ -52,12 +90,12 @@ async def main():
     #await xp.import_xp() # for testing
 
     asyncio.create_task(dbio.commit_loop())
+    
+    asyncio.create_task(reminders.reminder_scheduler(bot, wakeup))
 
     # Start bot
     async with bot:
         
         if BOT_TOKEN: await bot.start(BOT_TOKEN)
 
-
-import asyncio
 asyncio.run(main())

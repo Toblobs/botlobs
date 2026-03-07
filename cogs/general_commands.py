@@ -1,11 +1,14 @@
-# cogs > general.py // @toblobs // 05.03.26
+# cogs > general.py // @toblobs // 07.03.26
 
 from datetime import timedelta
+from dateutil import relativedelta
+
 from .__init__ import *
 
 import re
 import io
 import time
+import asyncio
 
 from typing import List, Tuple
 
@@ -19,25 +22,67 @@ import emoji
 from cogs.utils.embeds import basic_embed
 from cogs.utils.permissions import *
 
-from database import xp
+from database import xp, reminders, users
+
+from better_profanity import profanity
+profanity.load_censor_words()
 
 class GeneralCommands(commands.Cog):
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: commands.Bot, wakeup: asyncio.Event):
 
         self.bot = bot
+        self.wakeup = wakeup
 
     ### generally used submodules
 
     def hex_to_rgb(self, hex: str) -> tuple:
 
-            if hex[0] == '#': 
-                stripped = hex.lstrip('#')
-                
-            else: 
-                stripped = hex
+        if hex[0] == '#': 
+            stripped = hex.lstrip('#')
+            
+        else: 
+            stripped = hex
 
-            return tuple(int(stripped[i: i + 2], 16) for i in (0, 2, 4))
+        return tuple(int(stripped[i: i + 2], 16) for i in (0, 2, 4))
+
+    def parse_colors(self, text: str, max_colors: int = 8) -> List[str]:
+        
+
+        HEX_PATTERN = re.compile(r"^#?([0-9A-Fa-f]{6})$")
+        
+        text = text.strip()
+
+        if HEX_PATTERN.match(text):
+            
+            return [HEX_PATTERN.match(text).group(1).upper()] # type: ignore
+
+        if text.startswith('[') and text.endswith(']'):
+
+            inner = text[1:-1]
+
+            parts = [p.strip() for p in inner.split(",")]
+
+            if len(parts) == 0:
+                raise ValueError("Empty color sequence.")
+            
+            if len(parts) > max_colors:
+                raise ValueError(f"`{len(parts)}` colors provided, the maximum is `{max_colors}` colors.")
+            
+            colors = []
+
+            for p in parts:
+                
+                m = HEX_PATTERN.match(p)
+
+                if not m:
+                    raise ValueError(f"Invalid hex color: `{p}`.")
+                
+                colors.append(m.group(1).upper())
+            
+            return colors
+
+        raise ValueError("Invalid format: use either `RRGGBB` or `[RRGGBB, RRGGBB, ...]`.")
 
     def generate_color_image(self, size: Tuple[int, int], hexes_list: List[str]) -> io.BytesIO:
 
@@ -96,7 +141,7 @@ class GeneralCommands(commands.Cog):
 
         if banner:
             e.add_field(name = "**Server Banner**:", value = "\u200b")
-            await e.set_image(url = banner.url) # type: ignore
+            e.set_image(url = banner.url)
 
         e.set_thumbnail(url = self.bot.user.display_avatar.url) # type: ignore
         await interaction.response.send_message(embed = e)
@@ -111,10 +156,12 @@ class GeneralCommands(commands.Cog):
 
             await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Could not fetch info about this member.", bot = self.bot), ephemeral = True)
             return
-
+        
+        current_xp, level, prestige, intro_text, birthday, country = await users.get_user(member.id) # type: ignore
+        
         information = {"mention": f"{member.mention}", "name": f"`{member.name}`", "id": f"`{member.id}`",
                        "joined": f"<t:{int(member.joined_at.timestamp())}:D> (<t:{int(member.joined_at.timestamp())}:R>)", "registered": f"<t:{int(member.created_at.timestamp())}:D> (<t:{int(member.created_at.timestamp())}:R>)", # type: ignore
-                       "roles": member.roles, "permissions": [], "acknowledgments": [], "thumbnail": ""} 
+                       "roles": member.roles, "permissions": [], "acknowledgments": [], "intro_text": intro_text, "birthday": birthday, "country": country, "thumbnail": ""} 
 
         # Get permissions
         for perm_name, value in member.guild_permissions:
@@ -173,6 +220,15 @@ class GeneralCommands(commands.Cog):
         if information["acknowledgments"]:
             e.add_field(name = "Acknowledgments", value = ", ".join(information["acknowledgments"]), inline = False)
 
+        if information["intro_text"]:
+            e.add_field(name = "Introduction", value = information["intro_text"], inline = False)
+            
+        if information["birthday"]:
+            e.add_field(name = "Next Birthday", value = f"<t:{information["birthday"]}:D> (<t:{information["birthday"]}:R>)", inline = True)
+        
+        if information["country"]:
+            e.add_field(name = "Country", value = information["country"], inline = True)
+            
         e.set_thumbnail(url = information["thumbnail"])
         await interaction.response.send_message(embed = e)
 
@@ -201,10 +257,10 @@ class GeneralCommands(commands.Cog):
 
             information["hexes"] = [f"{role.color.value:06X}"] # default if no gradient
 
-            if role.secondary_color:
+            if role.secondary_color: # type: ignore
                 information["hexes"].append(f"#{role.secondary_color.value:06X}") # type: ignore
 
-            if role.tertiary_color:
+            if role.tertiary_color: # type: ignore
                 information["hexes"].append(f"#{role.tertiary_color.value:06X}") # type: ignore
 
             if role.icon:
@@ -269,9 +325,8 @@ class GeneralCommands(commands.Cog):
 
                 e.add_field(name = "Members", value = members_text, inline = False)
 
-            e.set_thumbnail(url = information["thumbnail"])
-
-            if file: e.set_image(url = await upload_asset(self.bot, file))
+            if file: e.set_thumbnail(url = await upload_asset(self.bot, file))
+            else: e.set_thumbnail(url = information["thumbnail"])
             await interaction.response.send_message(embed = e)
     
     # /channel
@@ -389,58 +444,131 @@ class GeneralCommands(commands.Cog):
             await interaction.response.send_message(embed = e, allowed_mentions = discord.AllowedMentions(users = True))
 
     # /suggest
+    @app_commands.command(name = 'suggest', description = "A temporary command allowing one to suggest an idea to the staff.")
+    async def suggest(self, interaction: discord.Interaction):
+    
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
+        suggest_channel = guild.get_channel(1153718764026736671) # type: ignore
+        staff_role = guild.get_role(1140049417626464316) # type: ignore
+        
+        member = interaction.user # type: ignore
+        
+        class SuggestionModal(discord.ui.Modal):
+            
+            def __init__(self, bot):
+                
+                super().__init__(title = "Introduction Form")
+                
+                self.add_item(discord.ui.TextInput(label = "Suggestion", placeholder = "Add your suggestion here...", style = discord.TextStyle.paragraph))
 
+                self.bot = bot
+                
+            async def on_submit(self, interaction: discord.Interaction):
+                
+                suggestion = self.children[0].value # type: ignore
+                
+                await suggest_channel.send(content = f"{staff_role.mention}", embed = basic_embed(title = "Suggestion", description = suggestion + f"\n## Sent by {member.mention}", bot = self.bot)) # type: ignore
+                
+                await interaction.response.send_message(embed = basic_embed(title = "Suggestion Form", description = f"Suggestion sent.", bot = self.bot), ephemeral = True)
+            
+        await interaction.response.send_modal(SuggestionModal(bot = self.bot))
+            
     # /remind
+    @app_commands.command(name = "remind", description = "Sets a reminder that can be reoccuring.")
+    @app_commands.describe(time = "How long until the reminder triggers", message = "Message to send along with reminder, optional", repeat = "How long until the reminder repeats, optional", channel = "Channel to send the reminder to, optional")
+    async def remind(self, interaction: discord.Interaction, time: str, message: str | None = None, repeat: str | None = None, channel: discord.TextChannel | None = None):
+        
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
+        
+        bot_channel = guild.get_channel(1138183014178902097) # type: ignore
+        
+        def get_user_role_limits(member: discord.Member):
 
+            ROLE_LIMITS = [(1140049990677450802, {"non_repeat": 50, "repeat": 5}),
+                           (1140049956829405184, {"non_repeat": 30, "repeat": 3}),
+                           (1140049921500795141, {"non_repeat": 30, "repeat": 3}),
+                           (1140049851850162226, {"non_repeat": 20, "repeat": 0}),
+                           (1140049746908684399, {"non_repeat": 20, "repeat": 0}),
+                           (1140049685885767692, {"non_repeat": 20, "repeat": 0}),
+                           (1140049620857266257, {"non_repeat": 10, "repeat": 0}),
+                           (1139122746199134249, {"non_repeat": 10, "repeat": 0})]
+
+        
+            for (role_id, limits) in ROLE_LIMITS:
+                
+                role = guild.get_role(role_id) # type: ignore
+                if role in member.roles: return limits
+                
+            return {"non_repeat": 10, "repeat": 0}
+        
+        MAX_YEARS = 10
+        now = datetime.now()
+        
+        try:
+            
+            future = now + parse_time_string(time) # type: ignore
+        
+        except ValueError as e:
+
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"{str(e).title()}.", bot = self.bot), ephemeral = True)
+            return
+        
+        MAX_YEARS = 10
+         
+        max_future = now + relativedelta(years = MAX_YEARS)  # type: ignore
+        
+        if future > max_future:
+            
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Time cannot be more than `10` years into the future.", bot = self.bot), ephemeral = True)
+            return
+        
+        future_timestamp = int(future.timestamp())
+        
+        member = interaction.user
+        channel = channel or bot_channel # type: ignore
+        
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You must send this command from, or set `channel` to, a text channel.", bot = self.bot), ephemeral = True) # type: ignore
+            return
+
+        channel_id = channel.id # type: ignore
+        
+        limits = get_user_role_limits(member) # type: ignore
+        user_reminders = await reminders.get_user_reminder(member.id, repeating_only = (repeat != None)) # type: ignore
+        
+        if not channel.permissions_for(member).send_messages: # type: ignore
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You must be able to send messages in the channel you set. Try a channel that isn't {channel.mention}", bot = self.bot), ephemeral = True) # type: ignore
+            return
+        
+        if repeat and len(user_reminders) >= limits["repeat"]: # type: ignore
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You have reached the maximum number of repeating reminders (`{limits["repeat"]}`).", bot = self.bot), ephemeral = True)
+            return
+        
+        if not repeat and len(user_reminders) >= limits["non_repeat"]: # type: ignore
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You have reached the maximum number of non-repeating reminders (`{limits["non_repeat"]}`).", bot = self.bot), ephemeral = True)
+            return
+        
+        #if profanity.contains_profanity(message):
+        #    await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Please do not use inappopriate language.", bot = self.bot), ephemeral = True)
+        
+        # Add reminder
+        link = f"https://twemoji.maxcdn.com/v/latest/72x72/{ord("⌚"):x}.png"
+        
+        reminder_id = await reminders.add_reminder(member.id, future_timestamp, channel_id, message, repeat)
+        await interaction.response.send_message(embed = basic_embed(title = "Reminder Set", description = f"Reminder set for {member.mention} \n> - **Time Set For**: <t:{future_timestamp}:F> (<t:{future_timestamp}:R>) \n> - **Message**: {message} \n> - **Repeats**: {repeat if repeat else "`N/A`"} \n> - **Channel**: {channel.mention} \n> - **Reminder ID**: `{reminder_id}`" , bot = self.bot, thumbnail = link)) # type: ignore
+        
+        self.wakeup.set()
+        
     # /convert
 
     # /color
     @app_commands.command(name = 'color', description = "Show a hex color or gradient of sequence of colors.")
     @app_commands.describe(hexes = "Either a single hex like #0f0f0f, or formatted in a comma-separated list like [#0f0f0f,#1f1f1f]")
     async def color(self, interaction: discord.Interaction, hexes: str):
-        
-        MAX_COLORS = 8
-
-        def parse_colors(text: str) -> List[str]:
-            
-            HEX_PATTERN = re.compile(r"^#?([0-9A-Fa-f]{6})$")
-            
-            text = text.strip()
-
-            if HEX_PATTERN.match(text):
-                
-                return [HEX_PATTERN.match(text).group(1).upper()] # type: ignore
-
-            if text.startswith('[') and text.endswith(']'):
-
-                inner = text[1:-1]
-
-                parts = [p.strip() for p in inner.split(",")]
-
-                if len(parts) == 0:
-                    raise ValueError("Empty color sequence.")
-                
-                if len(parts) > MAX_COLORS:
-                    raise ValueError(f"`{len(parts)}` colors provided, the maximum is `{MAX_COLORS}` colors.")
-                
-                colors = []
-
-                for p in parts:
-                    
-                    m = HEX_PATTERN.match(p)
-
-                    if not m:
-                        raise ValueError(f"Invalid hex color: `{p}`.")
-                    
-                    colors.append(m.group(1).upper())
-                
-                return colors
-
-            raise ValueError("Invalid format: use either `RRGGBB` or `[RRGGBB, RRGGBB, ...]`.")
 
         try:
 
-            hexes_list = parse_colors(hexes)
+            hexes_list = self.parse_colors(hexes)
         
         except ValueError as e:
 
@@ -486,7 +614,7 @@ class GeneralCommands(commands.Cog):
 
             if not m:
 
-                raise ValueError("Invalid format. Examples: `d7`, `2d10`, `d10*2`, `2d10*2+5`, `17d[8,13]+3`.")
+                raise ValueError("Invalid roll format. Examples: `d7`, `2d10`, `d10*2`, `2d10*2+5`, `17d[8,13]+3`.")
             
             dice_str = m.group(1)
             sides_str = m.group(2)
@@ -600,3 +728,70 @@ class GeneralCommands(commands.Cog):
         await interaction.response.send_message(embed = results_embed)
 
     # / introduce
+    @app_commands.command(name = "introduce", description = "Temporary command that opens UI Modal to edit introduction information.")
+    async def introduce(self, interaction: discord.Interaction):
+        
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
+        member = interaction.user # type: ignore
+        
+        class IntroductionModal(discord.ui.Modal):
+            
+            def __init__(self, bot):
+                
+                super().__init__(title = "Introduction Form")
+                
+                self.add_item(discord.ui.TextInput(label = "About Me", placeholder = "Enter your introdution text here...", style = discord.TextStyle.paragraph))
+                self.add_item(discord.ui.TextInput(label = "Birthday", placeholder = "Your birthday in format (DD-MM), eg. 24-07 (optional)", required = False))
+                self.add_item(discord.ui.TextInput(label = "Country", placeholder = "Copypaste a Unicode country emoji into here... (optional)", required = False))
+
+                self.bot = bot
+            
+            def next_date(self, dt):
+                
+                try:
+                    
+                    today = datetime.today()
+                    target = datetime(year = today.year, month = dt.month, day = dt.day) # type: ignore
+                
+                except:
+                    
+                    raise ValueError("Invalid day/month combination.")
+                
+                if target <= today:
+                    target = datetime(year = today.year + 1, month = dt.month, day = dt.day) # type: ignore
+                
+                return target
+                
+            async def on_submit(self, interaction: discord.Interaction):
+                
+                about_me = self.children[0].value # type: ignore
+                birthday = self.children[1].value # type: ignore
+                country = self.children[2].value # type: ignore
+                
+                try:
+                    
+                    if birthday:  assert datetime.strptime(birthday, "%d-%m"), f"`date` is not a valid date"
+                    if country: assert emoji.is_emoji(country), f"`country` is not is not an emoji"
+                
+                except BaseException as e:
+                    
+                    await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
+                    return
+
+                date = datetime.strptime(birthday, "%d-%m")
+                pinboard_channel = guild.get_channel(1140032670001275000) # type: ignore
+                target_date = int(self.next_date(date).timestamp())
+
+                LEVEL_UP_ROLES = [1140049990677450802, 1140049956829405184, 1140049921500795141, 1140049851850162226,1140049746908684399, 1140049685885767692]
+                found = False
+                
+                for r in LEVEL_UP_ROLES:
+                    
+                    if guild.get_role(r) in member.roles and not found: # type: ignore
+                        reminder_id = await reminders.add_reminder(member.id, target_date, pinboard_channel.id, message = f"Happy Birthday to {member.mention} (`{member.name}`)! 🎂 Please wish them a great day.", repeat = "1y") # type: ignore
+                        found = True
+                
+                await users.set_user_intro(member.id, about_me, target_date, country)
+                await interaction.response.send_message(embed = basic_embed(title = "Introduction Form", description = f"Introduction set.", bot = self.bot), ephemeral = True)
+                
+        await interaction.response.send_modal(IntroductionModal(bot = self.bot))
