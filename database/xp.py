@@ -1,4 +1,4 @@
-# database > xp.py // @toblobs // 07.03.26
+# database > xp.py // @toblobs // 10.03.26
 
 from .__init__ import *
 
@@ -9,6 +9,8 @@ import numpy as np
 
 from .dbio import db
 from .sync import sync_roles
+
+from .users import get_user_level
 
 async def log_message(user_id: int, channel_id: int, xp: int):
 
@@ -49,6 +51,20 @@ def level_from_xp(xp: int):
     
     return level
 
+async def get_top_xp_sum(n: int):
+    
+    cur = await db.conn.execute("""
+        SELECT COALESCE(SUM(xp), 0)
+        FROM (
+            SELECT xp
+            from users
+            ORDER BY xp DESC
+            LIMIT ?
+        )    
+    """, (n,))
+    
+    return (await cur.fetchone())[0] # type: ignore
+    
 async def count_messages(channel_id: int | None = None, timestamp: int | None = None, user_id: int | None = None) -> int:
 
     query = "SELECT COUNT(*) FROM xp_log"
@@ -131,26 +147,43 @@ async def channel_multiplier(channel) -> float:
     for r in rows: mult *= r[0]
     return mult
 
-async def set_xp(user_id, xp):
-
-    level = level_from_xp(xp)
+async def set_xp(user_id, xp, bot: commands.Bot):
+    
+    old_level = await get_user_level(user_id)
+    new_level = level_from_xp(xp)
 
     await db.conn.execute("""
         INSERT INTO users(user_id,xp,level)
         VALUES(?,?,?)
         ON CONFLICT(user_id)
         DO UPDATE SET
-        xp=?
-        level=?
-    """, (user_id, xp, level, xp, level))
+            xp=?,
+            level=?
+    """, (user_id, xp, new_level, xp, new_level))
+    
+    if new_level > old_level:
+        
+        guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+        member = guild.get_member(user_id) # type: ignore
+        
+        await level_up(member, xp, new_level, bot) # type: ignore
 
+async def add_mod_action(message_id, user_id, channel_id, timestamp, xp_change, source, moderator_id):
+    
+    await db.conn.execute("""
+        INSERT INTO xp_log(id, user_id, channel_id, timestamp, xp_change, source, moderator_id)
+        VALUES(?,?,?,?,?,?,?)             
+    """, (message_id, user_id, channel_id, timestamp, xp_change, source, moderator_id))
+
+    await db.conn.commit()
+    
 async def level_up(member: discord.Member, current_xp: int, level: int, bot: commands.Bot):
 
     xp_cog = bot.get_cog("XPCommands")
 
     full_xp_to_next = xp_required(level = level + 1) - xp_required(level = level)
     xp_gained = current_xp - xp_required(level = level)
-    xp_to_next = (full_xp_to_next )- xp_gained
+    xp_to_next = (full_xp_to_next - xp_gained)
 
     obtained_roles = (await sync_roles(member, level, bot))[0]
 
@@ -189,7 +222,8 @@ async def process_message(message: discord.Message, bot: commands.Bot):
 
     # Check and update cooldown
     if get_member_cooldown(message.author) < XP_COOLDOWN: return # type: ignore
-
+    if not isinstance(message.author, discord.Member): return
+    
     last_xp_time[user_id] = now
 
     # Calculate XP

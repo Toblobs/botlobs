@@ -1,4 +1,4 @@
-# cogs > xp_commands.py // @toblobs // 07.03.26
+# cogs > xp_commands.py // @toblobs // 10.03.26
 
 from datetime import timedelta
 import time
@@ -410,10 +410,26 @@ class XPCommands(commands.Cog):
             else: page = 1
         
         members = await leaderboard.leaderboard_page(page - 1)
+        
         member_ids = [int(m[0]) for m in members]
         member_xps = [int(m[1]) for m in members]
         member_levels = [int(m[2]) for m in members]
         
+        member_partial_levels = []
+        
+        for i, member_xp in enumerate(member_xps):
+            
+            member_level = member_levels[i]
+
+            over_level = member_xp - xp.xp_required(member_level)
+
+            xp_to_next = xp.xp_required(member_level + 1) - xp.xp_required(member_level)
+            
+            partial_level = member_level + (over_level / xp_to_next)
+            
+            member_partial_levels.append(partial_level)
+            
+
         # Get member colors
             
         member_colors = {}
@@ -444,10 +460,10 @@ class XPCommands(commands.Cog):
             member_obj = self.bot.get_guild(int(GUILD_ID)).get_member(member_id) # type: ignore
             name = member_obj.name if member_obj else "???"
             
-            member_level = member_levels[member_ids.index(member_id)]
-            member_y_on_line = 1.5 * member_level ** 3 + 15 * member_level ** 2 + 150 * member_level
+            member_level = member_partial_levels[member_ids.index(member_id)]
+            member_xp = member_xps[member_ids.index(member_id)]
             
-            ax.scatter(member_level, member_y_on_line, color = member_colors.get(member_id, "#ffffff"), s = 80, edgecolor = "white", zorder = 2, label = name)
+            ax.scatter(member_level, member_xp, color = member_colors.get(member_id, "#ffffff"), s = 80, edgecolor = "white", zorder = 2, label = name)
 
             legend_lines.append(Line2D([0], [0], color = member_colors.get(member_id, "#ffffff"), lw = 2, label = name))
             
@@ -500,25 +516,32 @@ class XPCommands(commands.Cog):
         guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
 
         cur = await dbio.db.conn.execute("""
-            SELECT role_id, multiplier
+            SELECT role_id, channel_id, multiplier
             FROM multipliers
         """)
 
         rows = await cur.fetchall()
+        
+        rows = sorted(rows, key = lambda r: r[2], reverse = True)
 
         roles_str = ""
+        channel_str = ""
 
         e = discord.Embed(title = f"XP Multipliers", color = DEFAULT_COLOR, timestamp = datetime.now(), description = f"")
         e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
         
         if rows:
 
-            for (role_id, multiplier) in rows:
+            for (role_id, channel_id, multiplier) in rows:
 
                 role = guild.get_role(role_id) # type: ignore
                 if role: roles_str += f"{role.mention} | (`{multiplier}x`) \n"
+                
+                channel = guild.get_channel(channel_id) # type: ignore
+                if channel: channel_str += f"{channel.mention} | (`{multiplier}x`) \n"
         
-        e.description = roles_str
+        e.add_field(name = "Role Multipliers", value = roles_str)
+        e.add_field(name = "Channel Multipluers", value = channel_str)
 
         if member:
 
@@ -529,7 +552,7 @@ class XPCommands(commands.Cog):
             if member_multiplier_role_id: member_multiplier_role = guild.get_role(member_multiplier_role_id) # type: ignore
 
             if member_multiplier_role:
-                e.add_field(name = f"🚀 Member Multiplier", value = f"(`{member_multiplier}x`)", inline = True) # type: ignore
+                e.add_field(name = f"🚀 Member Multiplier", value = f"{member_multiplier_role.mention}| (`{member_multiplier}x`)", inline = True) # type: ignore
             else:
                 e.add_field(name = "🚀 Member Multiplier", value = f"No multiplier.", inline = True)
 
@@ -918,7 +941,7 @@ class XPCommands(commands.Cog):
                 buffer = gen_cog.generate_color_image((1024, 256), hexes_list = hexes_list if hexes_list else [f"{role.color.value:06X}"]) # type: ignore
                 file = discord.File(buffer, filename = "role_color.png")
 
-            await interaction.response.send_message(embed = basic_embed(title = "Custom Editor", description = f"{role.mention} edited for {member.mention} \n> - **Name**: {role.name}\n> - **Role Color(s)**: {', '.join(hexes_list) if hexes_list else f"{role.color.value:06X}"}\n> - **Black Tie Color**: `{color if color else (await reward_roles.get_custom(role.id))[2]}`", bot = self.bot, thumbnail = (await upload_asset(self.bot, role_file)) if role_icon else await (upload_asset(self.bot, file)))) # type: ignore
+            await interaction.response.send_message(embed = basic_embed(title = "Custom Editor", description = f"{role.mention} edited for {member.mention} \n> - **Name**: {name if name else role.name}\n> - **Role Color(s)**: {', '.join(hexes_list) if hexes_list else f"{role.color.value:06X}"}\n> - **Black Tie Color**: `{color if color else (await reward_roles.get_custom(role.id))[2]}`", bot = self.bot, thumbnail = (await upload_asset(self.bot, role_file)) if role_icon else await (upload_asset(self.bot, file)))) # type: ignore
         
         except BaseException as e:
 

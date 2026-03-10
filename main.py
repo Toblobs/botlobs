@@ -1,4 +1,4 @@
-# main.py // @toblobs // 07.03.26
+# main.py // @toblobs // 10.03.26
 
 from __init__ import *
 
@@ -10,7 +10,7 @@ from cogs.xp_commands import XPCommands
 from cogs.staff_commands import StaffCommands
 
 from cogs.utils.embeds import basic_embed
-from database import XP_ENABLED, dbio, schema, xp, reminders
+from database import XP_ENABLED, dbio, schema, xp, reminders, users
 intents = discord.Intents.all()
 intents.typing = False
 
@@ -36,6 +36,13 @@ async def on_message(message):
     
     await xp.process_message(message, bot)
 
+@bot.event
+async def on_member_join(member: discord.Member):
+    
+    # Add to DB if not present
+    try: await users.get_user(member.id)
+    except: await users.add_user(member.id)    
+    
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
     
@@ -56,7 +63,6 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
     except: 
         
         pass
-    
 
 wakeup = asyncio.Event()
 
@@ -68,11 +74,10 @@ async def on_ready():
     # Add cogs
     await bot.add_cog(GeneralCommands(bot, wakeup))
     await bot.add_cog(XPCommands(bot))
-    await bot.add_cog(StaffCommands(bot))
+    await bot.add_cog(StaffCommands(bot, wakeup))
 
     # Sync tree
     await bot.tree.sync()
-
     print("[!] Connected to Discord")
 
 async def main():

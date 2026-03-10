@@ -3,6 +3,7 @@
 from .__init__ import *
 
 import time
+import random
 import discord
 from discord.ext import commands
 
@@ -106,19 +107,17 @@ async def delete_reminder(reminder_id: int):
     
 async def get_due_reminders():
     
-    now = int(time.time())
+    now = int(datetime.now().timestamp())
     
     cur = await db.conn.execute("""
         SELECT * FROM reminders
-        WHERE timestamp <= ?                            
+        WHERE timestamp > ?                            
     """, (now,))
     
     return (await cur.fetchall())
 
 async def get_next_reminder(): 
-    
-    now = int(time.time())
-    
+
     cur = await db.conn.execute("""
         SELECT * FROM REMINDERS
         ORDER BY timestamp
@@ -131,21 +130,117 @@ async def trigger_reminder(bot: commands.Bot, row):
     
     if (await get_reminder(int(row[0]))):
         
-        print(await get_reminder(int(row[0])))
-        print('a')
+        if int(row[1]) != BOT_ID:
         
-        user = bot.get_user(int(row[1]))
-        channel: discord.TextChannel = bot.get_channel(int(row[4])) # type: ignore
+            user = bot.get_user(int(row[1]))
+            channel: discord.TextChannel = bot.get_channel(int(row[4])) # type: ignore
 
-        if channel and user: await channel.send(f"{user.mention}", embed = basic_embed(title = "Reminder", description = f"Reminder triggered for {user.mention}\n> **Message**: {row[5]} \n> - **Reminder ID**: `{row[0]}`", bot = bot, thumbnail = f"https://twemoji.maxcdn.com/v/latest/72x72/{ord("⏰"):x}.png")) 
+            if channel and user: await channel.send(f"{user.mention}", embed = basic_embed(title = "Reminder", description = f"Reminder triggered for {user.mention}\n> **Message**: {row[5]} \n> - **Reminder ID**: `{row[0]}`", bot = bot, thumbnail = f"https://twemoji.maxcdn.com/v/latest/72x72/{ord("⏰"):x}.png")) 
+            
+            if bool(row[3]):
+                new_timestamp = int((datetime.now() + parse_time_string(row[3])).timestamp()) # type: ignore
+                await update_reminder_timestamp(int(row[0]), new_timestamp)
+            
+            else:
+                await delete_reminder(int(row[0]))
         
-        if bool(row[3]):
-            new_timestamp = int((datetime.now() + parse_time_string(row[3])).timestamp()) # type: ignore
-            await update_reminder_timestamp(int(row[0]), new_timestamp)
-        
-        else:
-            await delete_reminder(int(row[0]))
-        
+        else: # special bot reminder to do something
+
+            reminder_type = str(row[5]).split(':')[0]
+            reminder_info = str(row[5]).split(':')[1]
+            
+            match reminder_type:
+                
+                case "unmute":
+                    
+                    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+                    user_id = int(reminder_info)
+
+                    try:   
+                        
+                        muted_role = guild.get_role(1140287361352204339) # type: ignore 
+                        solitary_role = guild.get_role(1140287435809497108) # type: ignore
+
+                        member = guild.get_member(user_id) # type: ignore
+                        
+                        if muted_role in member.roles: await member.remove_roles(muted_role) # type: ignore
+                        if solitary_role in member.roles: await member.remove_roles(solitary_role) # type: ignore
+                    
+                    except Exception: pass
+
+                    await delete_reminder(int(row[0]))
+
+                case "unban":
+                    
+                    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+                    user_id = int(reminder_info)
+                    
+                    try: await guild.unban(await bot.fetch_user(user_id), reason = "Temporary ban expired") # type: ignore
+                    except Exception: pass
+                    
+                    await delete_reminder(int(row[0]))
+                    
+                case "birthday":
+                    
+                    new_timestamp = int((datetime.now() + parse_time_string(row[3])).timestamp()) # type: ignore
+                    await update_reminder_timestamp(int(row[0]), new_timestamp)
+                
+                case "giveaway":
+                    
+                    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+                    
+                    role_id = int(str(row[5]).split(':')[2])
+                    winner_amount = int(str(row[5]).split(':')[3])
+                    
+                    events_channel: discord.TextChannel = guild.get_channel(1140054643729252422) # type: ignore
+                    message = await events_channel.fetch_message(int(reminder_info))
+                    
+                    role = None 
+                    if role_id != -1: role = guild.get_role(role_id) # type: ignore
+
+                    eligible = []
+                    
+                    async for member in guild.fetch_members(limit = None): # type: ignore
+                        if not role: eligible.append(member)
+                        elif role in member.roles: eligible.append(member)
+                        else: continue
+
+                    winners = []
+                    for r in range(winner_amount): winners.append(random.choice(eligible))
+                    
+                    await message.reply(embed = basic_embed(title = "Giveaway: Results", description = f"The winner(s) of this giveaway are: {" ".join(w.mention for w in winners)}", bot = bot, thumbnail = f"https://twemoji.maxcdn.com/v/latest/72x72/{ord("🎆"):x}.png"))
+                    
+                    await delete_reminder(int(row[0]))
+                    
+                case "unlock":
+                    
+                    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+                    locked_channel: discord.TextChannel = guild.get_channel(int(reminder_info)) # type: ignore
+                    
+                    everyone = guild.default_role # type: ignore
+                    overwrite = locked_channel.overwrites_for(everyone)
+                    overwrite.send_messages = None
+                    overwrite.add_reactions = None
+                    
+                    await locked_channel.set_permissions(everyone, overwrite = overwrite)
+                                        
+                    # copypasted code, remove
+                    JR_MOD_ROLE = 1139119456862339082
+                    MOD_ROLE = 1139119339161784330
+                    ADMIN_ROLE = 1139119232710344784
+                    TOBLOBS_ROLE = 1139118721022046289
+
+                    staff = [JR_MOD_ROLE, MOD_ROLE, ADMIN_ROLE, TOBLOBS_ROLE]
+
+                    for mod_role in [guild.get_role(s) for s in staff]: # type: ignore
+                        mod_overwrite = locked_channel.overwrites_for(mod_role) # type: ignore
+                        mod_overwrite.send_messages = mod_overwrite.add_reactions = None
+                        await locked_channel.set_permissions(mod_role, overwrite = mod_overwrite) # type: ignore
+                    
+                    await locked_channel.send(embed = basic_embed(title = "Channel Unlocked", description = "🔓 Channel unlocked.", bot = bot))
+                    
+                    await delete_reminder(int(row[0]))
+                    
 async def reminder_scheduler(bot: commands.Bot, wakeup: asyncio.Event):
 
     await bot.wait_until_ready()
@@ -162,7 +257,7 @@ async def reminder_scheduler(bot: commands.Bot, wakeup: asyncio.Event):
             
         now = datetime.now()
         wait_time = (datetime.fromtimestamp(row[2]) - now).seconds # type: ignore
-
+            
         if wait_time > 0: 
             
             try:

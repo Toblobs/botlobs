@@ -1,4 +1,4 @@
-# database > users.py // @toblobs // 07.03.26
+# database > users.py // @toblobs // 10.03.26
 
 from .__init__ import *
 
@@ -32,14 +32,14 @@ async def set_user_intro(user_id: int, intro_text: str, birthday: int, country: 
     
     await db.conn.commit()
     
-async def ensure_user(user_id: int):
+async def add_user(user_id: int):
 
     await db.conn.execute("""
-        INSERT INTO users(user_id)
-        VALUES(?)
+        INSERT INTO users(user_id, xp, level, prestige)
+        VALUES(?,?,?)
         ON CONFLICT(user_id)
         DO NOTHING
-    """)
+    """,(user_id, 0, 0, 0,))
 
 async def get_user_level(user_id: int):
 

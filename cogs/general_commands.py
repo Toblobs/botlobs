@@ -1,4 +1,4 @@
-# cogs > general.py // @toblobs // 07.03.26
+# cogs > general.py // @toblobs // 10.03.26
 
 from datetime import timedelta
 from dateutil import relativedelta
@@ -21,11 +21,9 @@ import emoji
 
 from cogs.utils.embeds import basic_embed
 from cogs.utils.permissions import *
+from cogs.utils.emoji import *
 
 from database import xp, reminders, users
-
-from better_profanity import profanity
-profanity.load_censor_words()
 
 class GeneralCommands(commands.Cog):
 
@@ -93,21 +91,23 @@ class GeneralCommands(commands.Cog):
         segments = len(colors) - 1
 
         for x in range(size[0]):
+            
+            if x > 0:
+                
+                pos = x / (size[0] - 1)
+                segment = min(int(pos * segments), segments - 1)
 
-            pos = x / (size[0] - 1)
-            segment = min(int(pos * segments), segments - 1)
+                local_pos = (pos* segments) - segment
 
-            local_pos = (pos* segments) - segment
+                c1 = colors[segment]
+                c2 = colors[segment + 1]
 
-            c1 = colors[segment]
-            c2 = colors[segment + 1]
+                r = int(c1[0] + (c2[0] - c1[0]) * local_pos)
+                g = int(c1[1] + (c2[1] - c1[1]) * local_pos)
+                b = int(c1[2] + (c2[2] - c1[2]) * local_pos)
 
-            r = int(c1[0] + (c2[0] - c1[0]) * local_pos)
-            g = int(c1[1] + (c2[1] - c1[1]) * local_pos)
-            b = int(c1[2] + (c2[2] - c1[2]) * local_pos)
-
-            for y in range(size[1]):
-                pixels[x, y] = (r, g, b) # type: ignore
+                for y in range(size[1]):
+                    pixels[x, y] = (r, g, b) # type: ignore
 
         buffer = io.BytesIO()
         img.save(buffer, "PNG")
@@ -127,11 +127,11 @@ class GeneralCommands(commands.Cog):
         guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
         banner = guild.banner # type: ignore
 
-        information = {"🆔 **Server ID**": f"`{GUILD_ID}`", "<:toblobsjumpscare:1478176349876125909> **Owner**": f"{self.bot.get_user(762238670656634921).mention}", "<:blob:1478172385638350858> **Members**": f"`{sum(1 for m in guild.members if not m.bot)}`", # type: ignore
-                       "⭐ **Created At**": f"<t:{int(guild.created_at.timestamp())}:D>", "🎆 **Opened At**": f"<t:1695164400:D>", "<:serverboosters:1478172421403054171> **Boost Level**": f"Level `{guild.premium_tier}` (`{guild.premium_subscription_count}` Boosts)", # type: ignore
-                       "<:blacktie:1478172419113091143> **Roles**": f"`{len(guild.roles)}`", "📚 **Categories**": f"`{len([c for c in guild.channels if isinstance(c, discord.CategoryChannel)])}`", "👪 **Default Role**": f"{guild.get_role(1139122746199134249).mention}", # type: ignore
-                       "💬 **Text Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.TextChannel)])}`", "🎧 **Voice Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.VoiceChannel)])}`", "➡️ **This Channel**": f"{interaction.channel.mention}", # type: ignore
-                       "<:toblobsconfident:1478176334651064444> **Emojis**": f"`{len(guild.emojis)}`", "<:tobhead:1478172412494479380> **Bots**": f"`{sum(1 for m in guild.members if m.bot)}`", "📢 Invite Code:": f"https://discord.com/invite/{INVITE_CODE}", # type: ignore
+        information = {f"{get_emoji("botlobs")} **Server ID**": f"`{GUILD_ID}`", f"{get_emoji("lapislapels")} **Owner**": f"{self.bot.get_user(762238670656634921).mention}", f"{get_emoji("blob")} **Members**": f"`{sum(1 for m in guild.members if not m.bot)}`", # type: ignore
+                       f"{get_emoji("artandcreatives")} **Created At**": f"<t:{int(guild.created_at.timestamp())}:D>", f"{get_emoji("admin")} **Opened At**": f"<t:1695164400:D>", f"{get_emoji("serverbooster")} **Boost Level**": f"Level `{guild.premium_tier}` (`{guild.premium_subscription_count}` Boosts)", # type: ignore
+                       f"{get_emoji("blacktie")} **Roles**": f"`{len(guild.roles)}`", f"{get_emoji("writingandbooks")} **Categories**": f"`{len([c for c in guild.channels if isinstance(c, discord.CategoryChannel)])}`", f"{get_emoji("irlfriends")} **Default Role**": f"{guild.get_role(1139122746199134249).mention}", # type: ignore
+                       f"{get_emoji("suit")} **Text Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.TextChannel)])}`", f"{get_emoji("music")} **Voice Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.VoiceChannel)])}`", f"{get_emoji("cluefinder")} **This Channel**": f"{interaction.channel.mention}", # type: ignore
+                       f"{get_emoji("scarfman")} **Emojis**": f"`{len(guild.emojis)}`", f"{get_emoji("bots")} **Bots**": f"`{sum(1 for m in guild.members if m.bot)}`", f"{get_emoji("eventannouncements")} Invite Code:": f"https://discord.com/invite/{INVITE_CODE}", # type: ignore
         }
 
         e = discord.Embed(title = "The Toblobs Lounge: About Page", color = DEFAULT_COLOR, timestamp = datetime.now())
@@ -157,7 +157,12 @@ class GeneralCommands(commands.Cog):
             await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Could not fetch info about this member.", bot = self.bot), ephemeral = True)
             return
         
-        current_xp, level, prestige, intro_text, birthday, country = await users.get_user(member.id) # type: ignore
+        try:
+            current_xp, level, prestige, intro_text, birthday, country = await users.get_user(member.id) # type: ignore
+        
+        except:
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Could not fetch info about this member.", bot = self.bot), ephemeral = True)
+            return
         
         information = {"mention": f"{member.mention}", "name": f"`{member.name}`", "id": f"`{member.id}`",
                        "joined": f"<t:{int(member.joined_at.timestamp())}:D> (<t:{int(member.joined_at.timestamp())}:R>)", "registered": f"<t:{int(member.created_at.timestamp())}:D> (<t:{int(member.created_at.timestamp())}:R>)", # type: ignore
@@ -548,9 +553,6 @@ class GeneralCommands(commands.Cog):
             await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You have reached the maximum number of non-repeating reminders (`{limits["non_repeat"]}`).", bot = self.bot), ephemeral = True)
             return
         
-        #if profanity.contains_profanity(message):
-        #    await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Please do not use inappopriate language.", bot = self.bot), ephemeral = True)
-        
         # Add reminder
         link = f"https://twemoji.maxcdn.com/v/latest/72x72/{ord("⌚"):x}.png"
         
@@ -736,7 +738,7 @@ class GeneralCommands(commands.Cog):
         
         class IntroductionModal(discord.ui.Modal):
             
-            def __init__(self, bot):
+            def __init__(self, bot, wakeup: asyncio.Event):
                 
                 super().__init__(title = "Introduction Form")
                 
@@ -745,6 +747,7 @@ class GeneralCommands(commands.Cog):
                 self.add_item(discord.ui.TextInput(label = "Country", placeholder = "Copypaste a Unicode country emoji into here... (optional)", required = False))
 
                 self.bot = bot
+                self.wakeup = wakeup
             
             def next_date(self, dt):
                 
@@ -770,10 +773,13 @@ class GeneralCommands(commands.Cog):
                 
                 try:
                     
-                    if birthday:  assert datetime.strptime(birthday, "%d-%m"), f"`date` is not a valid date"
+                    if birthday: 
+                        try: datetime.strptime(birthday, "%d-%m") 
+                        except ValueError: raise AssertionError(f"`date` is not a valid date")
+                        
                     if country: assert emoji.is_emoji(country), f"`country` is not is not an emoji"
                 
-                except BaseException as e:
+                except AssertionError as e:
                     
                     await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
                     return
@@ -788,10 +794,13 @@ class GeneralCommands(commands.Cog):
                 for r in LEVEL_UP_ROLES:
                     
                     if guild.get_role(r) in member.roles and not found: # type: ignore
-                        reminder_id = await reminders.add_reminder(member.id, target_date, pinboard_channel.id, message = f"Happy Birthday to {member.mention} (`{member.name}`)! 🎂 Please wish them a great day.", repeat = "1y") # type: ignore
+                        reminder_id = await reminders.add_reminder(member.id, target_date, pinboard_channel.id, message = f"birthday:{member.id}", repeat = "1y") # type: ignore
+                        self.wakeup.set()
+                        
                         found = True
                 
                 await users.set_user_intro(member.id, about_me, target_date, country)
+
                 await interaction.response.send_message(embed = basic_embed(title = "Introduction Form", description = f"Introduction set.", bot = self.bot), ephemeral = True)
-                
-        await interaction.response.send_modal(IntroductionModal(bot = self.bot))
+                    
+        await interaction.response.send_modal(IntroductionModal(bot = self.bot, wakeup = self.wakeup))

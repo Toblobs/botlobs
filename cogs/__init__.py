@@ -1,4 +1,4 @@
-# cogs > __init__.py // @toblobs // 07.03.26
+# cogs > __init__.py // @toblobs // 10.03.26
 
 import os
 import io
@@ -21,6 +21,9 @@ DEFAULT_COLOR = discord.Color.from_rgb(183, 117, 219)
 load_dotenv("secrets.env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
+
+BOT_ID = 1478062732392661164
+BOT_LOGS_CHANNEL = 1140063993034199091
 
 ASSET_CHANNEL_ID = 1479089948215742464
 
@@ -66,7 +69,7 @@ async def get_icon_binary(icon) -> bytes | None:
 
         return None
     
-def parse_time_string(time_str: str) -> int:
+def parse_time_string(time_str: str) -> relativedelta:
          
     now = datetime.now()
     

@@ -1,4 +1,4 @@
-# cogs > utils > embeds.py // @toblobs // 03.03.26
+# cogs > utils > embeds.py // @toblobs // 10.03.26
 
 from __init__ import *
 
@@ -35,7 +35,7 @@ def is_staff_supersede(member1: discord.Member, member2: discord.Member) -> bool
         highest_member1_role = highest_member2_role = None
 
         if member1_staff_roles: highest_member1_role = max(member1_staff_roles, key = lambda x: staff.index(x)) 
-        if member2_staff_roles: highest_member2_role = max(member1_staff_roles, key = lambda x: staff.index(x))
+        if member2_staff_roles: highest_member2_role = max(member2_staff_roles, key = lambda x: staff.index(x))
 
         if highest_member1_role and highest_member2_role:
             
