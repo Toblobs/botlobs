@@ -1,4 +1,4 @@
-# database > schema.py // @toblobs // 07.03.26
+# database > schema.py // @toblobs // 18.03.26
 
 from .__init__ import *
 import aiosqlite
@@ -44,9 +44,8 @@ async def create_tables():
     );
 
     CREATE TABLE IF NOT EXISTS statuses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        number INTEGER,
+        number INTEGER PRIMARY KEY AUTOINCREMENT,
+        date INTEGER,
         text TEXT
     );
 
@@ -60,9 +59,10 @@ async def create_tables():
     );
 
     CREATE TABLE IF NOT EXISTS quotes (
-        reminder_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quote_id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         message_id INTEGER,
+        content TEXT,
         timestamp INTEGER
     );
 

@@ -1,4 +1,4 @@
-# cogs > general.py // @toblobs // 10.03.26
+# cogs > general.py // @toblobs // 18.03.26
 
 from datetime import timedelta
 from dateutil import relativedelta
@@ -9,6 +9,7 @@ import re
 import io
 import time
 import asyncio
+import psutil
 
 from typing import List, Tuple
 
@@ -18,6 +19,11 @@ from discord.ext import commands
 import numpy as np
 from PIL import Image
 import emoji
+
+import matplotlib.pyplot as plt 
+import matplotlib.dates as mdates
+from matplotlib.ticker import MaxNLocator, StrMethodFormatter
+from matplotlib.lines import Line2D
 
 from cogs.utils.embeds import basic_embed
 from cogs.utils.permissions import *
@@ -32,6 +38,9 @@ class GeneralCommands(commands.Cog):
         self.bot = bot
         self.wakeup = wakeup
 
+        self.start_time = time.time()
+        self.process = None
+        
     ### generally used submodules
 
     def hex_to_rgb(self, hex: str) -> tuple:
@@ -116,8 +125,122 @@ class GeneralCommands(commands.Cog):
         return buffer
     
     ### commands
-
+    
     # /help
+    @app_commands.command(name = "help", description = "Shows a list of all commands.")
+    @app_commands.describe(page = "The page to jump to, optional", command = "The command to jump to, optional")
+    async def help(self, interaction: discord.Interaction, page: int = 1, command: str | None = None):
+        
+        async def build_help_embed(page):
+            
+            e = discord.Embed(title = "Help Pages", color = DEFAULT_COLOR, timestamp = datetime.now())
+            e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
+
+            file = discord.File(HELP_PAGES_FOLDER + rf"\page-{page:02}.png", filename = "helppage.png")
+            e.set_image(url = "attachment://helppage.png")
+            
+            e.description = "Browse the help pages."
+            
+            e.set_footer(text = f"Page {page}")
+            return (e, file)
+        
+        class PageSelect(discord.ui.Select):
+            
+            def __init__(self, parent_view: discord.ui.View):
+                
+                self.parent_view = parent_view
+                total_pages = 24
+                
+                options = []
+                
+                for page in range(1, total_pages + 1):
+
+                    options.append(discord.SelectOption(label = f"Page {page}", value = str(page)))
+                    super().__init__(placeholder = "Jump to page...", min_values = 1, max_values = 1, options = options)
+            
+            async def callback(self, interaction: discord.Interaction):
+
+                page = int(self.values[0])
+                self.parent_view.page = page # type: ignore
+
+                e = await self.parent_view.load_page() # type: ignore
+
+                await interaction.response.edit_message(embed = e, view = self.parent_view)
+
+            async def interaction_check(self, interaction) -> bool:
+                return interaction.user.id == self.parent_view.user_id # type: ignore
+        
+        class HelpView(discord.ui.View):
+            
+            def __init__(self, interaction, page = 1):
+
+                super().__init__(timeout = 300)
+
+                self.user_id = interaction.user.id
+                self.page = page
+                self.add_item(PageSelect(self))
+            
+            async def load_page(self): return await build_help_embed(self.page)
+
+            @discord.ui.button(label = "◀ Previous")
+            async def previous(self, interaction, button):
+
+                if self.page > 1:
+                    self.page -= 1
+                
+                embed = await self.load_page()
+                await interaction.response.edit_message(embed = embed, view = self)
+
+            @discord.ui.button(label = "Next ▶")
+            async def next(self, interaction, button):
+
+                self.page += 1
+                
+                embed = await self.load_page()
+                await interaction.response.edit_message(embed = embed, view = self)
+        
+        commands_to_page = {
+                            # General Commands
+                            "help": 6, "about": 6, "info": 6, "birthdays": 7, "role": 7, "channel": 7, "ping": 7,
+                            "avatar": 7, "banner": 8, "suggest": 8, "remind": 8, "embed": 8, "convert": 8, "edit-image": 9,
+                            "color": 9, "roll": 9, "introduce": 10, "bot-status": 10,
+                            
+                            # XP Commands
+                            "leaderboard": 11, "curve": 11, "multipliers": 11, "sync": 12, "rank": 12, "calculate": 12,
+                            "prestige-shop": 12, "black-tie": 12, "custom": 12,
+                            
+                            # Fun Commands
+                            "topic": 14, "two-o-four-eight": 14, "quote": 14, "tierlist": 14, "event": 15, "play": 15,
+                            "controller": 15, "remove": 16,
+                            
+                            # Staff Commands
+                            "xp-set": 17, "multipliers-set": 17, "nick-set": 18, "mute": 18, "unmute": 18, "kick": 18,
+                            "ban": 19, "giveaway": 19, "purge": 20, "lock": 20, "quote-bank": 20, "custom-set": 21, "remove-reminder": 21,
+                            
+                            # Tobs Commands & Passive
+                            "status": 22, "restart": 22, "passive": 23
+                            }
+        
+        if page is None: page = 1
+        
+        if not (1 <= page <= 24):
+            
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"`page` must be between `1` and `24.", bot = self.bot), ephemeral = True)
+            return
+        
+        if command is not None:
+            
+            if command.lower() not in commands_to_page.keys():
+                
+                await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Could not find this `command`.", bot = self.bot), ephemeral = True)
+                return
+
+            page = commands_to_page[command.lower()]
+        
+        view = HelpView(interaction, page = page)
+
+        e, file = await view.load_page()
+        await interaction.response.send_message(embed = e, view = view, file = file)
 
     # /about
     @app_commands.command(name = "about", description = "Shows the info page for the server.")
@@ -237,6 +360,56 @@ class GeneralCommands(commands.Cog):
         e.set_thumbnail(url = information["thumbnail"])
         await interaction.response.send_message(embed = e)
 
+    # /birthdays
+    @app_commands.command(name = "birthdays", description = "Shows birthdays in the server.")
+    @app_commands.describe(month = "Month to look for birthdays for, optional", timezone = "Timezone to offset by, e.g. -5 for GMT-5, optional")
+    async def birthdays(self, interaction: discord.Interaction, month: str | None = None, timezone: int | None = 0):
+        
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
+        
+        if not timezone: timezone = 0
+        
+        if not -12 <= timezone <= 12:
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Invalid `timezone` given - must be between `-12` and `12`, e.g. `-5` for the GMT-5 timezone.", bot = self.bot), ephemeral = True) # type: ignore
+            return
+        
+        months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+        month_int = 0
+        
+        if not month: month_int = datetime.now().month - 1
+        
+        elif month.lower().strip() not in months:
+            await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"Invalid `month` given - must be one of {", ".join([m.title() for m in months])}.", bot = self.bot), ephemeral = True) # type: ignore
+            return
+
+        else: month_int = months.index(month.lower().strip())
+        
+        birthdays = []
+        all_users = await users.get_all_users()
+        
+        for (user_id, _xp, level, prestige, intro_text, birthday, country) in all_users:
+            
+            if birthday:
+                
+                birthday_month = datetime.fromtimestamp(int(birthday)).month
+                if birthday_month == month_int + 1: birthdays.append((user_id, int(birthday) + (-1 * timezone * 3600)))
+        
+        birthdays = sorted(birthdays, key = lambda x: x[1])
+        
+        members_text = ""
+        
+        for b in birthdays:
+            
+            user_id, timestamp = b
+            
+            member = guild.get_member(user_id) # type: ignore
+
+            members_text += f"\n{member.mention if member else "???"} | <t:{timestamp}:D>"
+        
+        if len(birthdays) > 30: members_text += " ... (showing first **30** members)"
+        
+        await interaction.response.send_message(embed = basic_embed(title = f"Member Birthdays in {months[month_int].title()}", description = members_text, bot = self.bot))
+            
     # /role
     @app_commands.command(name = "role", description = "Show the info page for a server role.")
     @app_commands.describe(role = "Role to get info about.", members = "Fetch up to 30 members who have this role, server moderators only.")
@@ -560,8 +733,45 @@ class GeneralCommands(commands.Cog):
         await interaction.response.send_message(embed = basic_embed(title = "Reminder Set", description = f"Reminder set for {member.mention} \n> - **Time Set For**: <t:{future_timestamp}:F> (<t:{future_timestamp}:R>) \n> - **Message**: {message} \n> - **Repeats**: {repeat if repeat else "`N/A`"} \n> - **Channel**: {channel.mention} \n> - **Reminder ID**: `{reminder_id}`" , bot = self.bot, thumbnail = link)) # type: ignore
         
         self.wakeup.set()
+    
+    # /embed
+    @app_commands.command(name = "embed", description = "Creates an embed using the bot.")
+    @app_commands.describe(title = "The title of the embed", description = "The description of the embed, optional", color = "The color of the embed, like #1f1f1f, optional", image = "The image of the embbed, optional")
+    async def embed(self, interaction: discord.Interaction, title: str, description: str = "", color: str = "", image: discord.Attachment | None = None):
         
+        if color == "": rgb_color = DEFAULT_COLOR
+        
+        else: 
+            
+            try: rgb_color = discord.Color.from_rgb(*self.hex_to_rgb(self.parse_colors("[" + color + "]", max_colors = 1)[0]))
+            
+            except Exception as e:
+                await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
+                return
+        
+        img_binary = None
+        
+        try: img_binary = await get_icon_binary(image, max_kb = 51200, max_size = (1024, 1024))
+        except ValueError as e: await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
+    
+        embed_image = io.BytesIO(img_binary) if img_binary else None
+        embed_image_file = discord.File(embed_image, filename = "embed_image.png") if img_binary else None # type: ignore
+
+        e = discord.Embed(title = title, description = description, color = rgb_color)
+        e.set_author(name = interaction.user.name, icon_url = interaction.user.display_avatar.url) 
+
+        if embed_image_file:
+            
+            e.set_image(url = "attachment://embed_image.png")
+            await interaction.response.send_message(embed = e, file = embed_image_file)
+        
+        else:
+            
+          await interaction.response.send_message(embed = e)  
+          
     # /convert
+    
+    # /edit-image
 
     # /color
     @app_commands.command(name = 'color', description = "Show a hex color or gradient of sequence of colors.")
@@ -730,7 +940,7 @@ class GeneralCommands(commands.Cog):
         await interaction.response.send_message(embed = results_embed)
 
     # / introduce
-    @app_commands.command(name = "introduce", description = "Temporary command that opens UI Modal to edit introduction information.")
+    @app_commands.command(name = "introduce", description = "A temporary command allowing one to edit their introduction.")
     async def introduce(self, interaction: discord.Interaction):
         
         guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
@@ -774,9 +984,11 @@ class GeneralCommands(commands.Cog):
                 try:
                     
                     if birthday: 
-                        try: datetime.strptime(birthday, "%d-%m") 
+                        try: _date = datetime.strptime(birthday, "%d-%m") 
                         except ValueError: raise AssertionError(f"`date` is not a valid date")
-                        
+                    
+                    else: _date = 0
+                    
                     if country: assert emoji.is_emoji(country), f"`country` is not is not an emoji"
                 
                 except AssertionError as e:
@@ -784,23 +996,145 @@ class GeneralCommands(commands.Cog):
                     await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
                     return
 
-                date = datetime.strptime(birthday, "%d-%m")
-                pinboard_channel = guild.get_channel(1140032670001275000) # type: ignore
-                target_date = int(self.next_date(date).timestamp())
+                if _date: target_date = int(self.next_date(_date).timestamp())
+                else: target_date = None
 
-                LEVEL_UP_ROLES = [1140049990677450802, 1140049956829405184, 1140049921500795141, 1140049851850162226,1140049746908684399, 1140049685885767692]
-                found = False
-                
-                for r in LEVEL_UP_ROLES:
-                    
-                    if guild.get_role(r) in member.roles and not found: # type: ignore
-                        reminder_id = await reminders.add_reminder(member.id, target_date, pinboard_channel.id, message = f"birthday:{member.id}", repeat = "1y") # type: ignore
-                        self.wakeup.set()
-                        
-                        found = True
-                
                 await users.set_user_intro(member.id, about_me, target_date, country)
-
                 await interaction.response.send_message(embed = basic_embed(title = "Introduction Form", description = f"Introduction set.", bot = self.bot), ephemeral = True)
                     
         await interaction.response.send_modal(IntroductionModal(bot = self.bot, wakeup = self.wakeup))
+        
+    # /bot-status 
+    @app_commands.command(name = "bot-status", description = "Shows information about the bot.")
+    @app_commands.describe(graph = "Whether to generate a live graph of metrics, optional")
+    async def botstatus(self, interaction: discord.Interaction, graph: bool = False):
+        
+        if graph and not is_moderator(interaction.user): # type: ignore
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"Using the `graph` argument is a permission for {guild.get_role(MOD_ROLE).mention} and above only.", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+            return
+            
+        def get_uptime(self):
+            
+            seconds = int(time.time() - self.start_time)
+            return f"{seconds // 3600}h {(seconds % 3600) // 60}m {seconds % 60}s"
+
+        async def run_graph_updates(message: discord.Message):
+            
+            cpu_data, mem_data, net_data, time_data = [], [], [], []
+            
+            peak_cpu = 0
+            peak_mem = 0
+            peak_net = 0
+            
+            prev_net = psutil.net_io_counters()
+            
+            for i in range(60 * 12 * 1): # last value is hours running
+                
+                cpu = self.process.cpu_percent(interval = None) # type: ignore
+                mem = self.process.memory_percent() # type: ignore
+                
+                current_net = psutil.net_io_counters()
+                
+                net_usage = ((current_net.bytes_sent - prev_net.bytes_sent) + (current_net.bytes_recv - prev_net.bytes_sent)) / 1024
+                
+                cpu_data.append(cpu)
+                mem_data.append(mem)
+                net_data.append(net_usage)
+                time_data.append(i * 5)
+                
+                cpu_data = cpu_data[-30:]
+                mem_data = mem_data[-30:]
+                net_data = net_data[-30:]
+                time_data = time_data[-30:]
+                
+                peak_cpu = max(peak_cpu, cpu)
+                peak_mem = max(peak_mem, mem)
+                peak_net = max(peak_net, net_usage)
+                
+                buffer = make_graph(time_data, cpu_data, mem_data, net_data)
+                file = discord.File(buffer, filename = "botstats.png")
+                
+                e = discord.Embed(title = "Bot Status", color = DEFAULT_COLOR, timestamp = datetime.now())
+                e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
+
+                e.description = f"""An open source Discord bot, written to power The Toblobs Lounge.\n## __Bot Information__
+        > - **Current Version**: `v{VERSION}` (last updated <t:1773792000:R>)
+        > - **Codebase**: {GITHUB_LINK}
+        > - **Documentation & Help**: *Coming soon...*
+        ## __Program Information__
+        > - **Uptime**: `{get_uptime(self)}`    
+        """
+                e.add_field(name = "Current", value = f"> - **CPU**: `{cpu:.1f}%`\n> - **Memory**: `{mem:.1f}%`\n> - **Network**: `{int(net_usage / 5)} KB/s`")
+                e.add_field(name = "Peak (5 min)", value = f"> - **CPU**: `{peak_cpu:.1f}%`\n> - **Memory**: `{peak_mem:.1f}%`\n> - **Network**: `{int(peak_net)} KB/s`")
+
+                e.set_image(url = "attachment://botstats.png")
+                
+                await message.edit(embed = e, attachments = [file])
+                
+                await asyncio.sleep(5)
+        
+        def make_graph(time_data, cpu_data, mem_data, net_data):
+               
+            fig, ax = plt.subplots()
+            
+            ax.plot(time_data, cpu_data, label = "CPU %")
+            ax.plot(time_data, mem_data, label = "Memory %")
+            #ax.plot(time_data, net_data, label = "Network KB/(5s)")
+            
+            plt.xlabel("Time (seconds)")
+            plt.ylabel("Usage")
+
+            fig.patch.set_facecolor("#1a1a1e")
+            ax.set_facecolor("#1a1a1e")
+
+            ax.xaxis.label.set_color("white")
+            ax.yaxis.label.set_color("white")
+
+            ax.tick_params(axis = "both", colors = "white")
+        
+            ax.grid(axis = "x", linestyle = "--", alpha = 0.2, color = "white")
+            ax.grid(axis = "y", linestyle = "--", alpha = 0.2, color = "white")
+
+            legend = ax.legend(framealpha = 0, frameon = False, labelcolor = "white", fontsize = 10, loc = "upper right")
+
+            for spine in ax.spines.values():
+                spine.set_color("white")
+            
+            ax.yaxis.set_major_locator(MaxNLocator(integer = True))
+            ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.0f}'))
+
+            plt.tight_layout()
+        
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format = "png")
+            plt.close()
+            
+            buffer.seek(0)
+            
+            plt.close()
+            
+            return buffer
+        
+        await interaction.response.defer()
+        
+        self.process = psutil.Process(os.getpid())
+
+        uptime = get_uptime(self)
+        
+        cpu = psutil.cpu_percent()
+        mem = psutil.virtual_memory().percent
+        
+        # Generate embed
+        e = discord.Embed(title = "Bot Status", color = DEFAULT_COLOR, timestamp = datetime.now())
+        e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
+        
+        e.description = f"""An open source Discord bot, written to power The Toblobs Lounge.\n## __Bot Information__
+        > - **Current Version**: `v{VERSION}` (last updated <t:1773792000:R>)
+        > - **Codebase**: {GITHUB_LINK}
+        > - **Documentation & Help**: *Coming soon...*
+        ## __Program Information__
+        > - **Uptime**: `{uptime}`    
+        """
+        
+        message = (await interaction.followup.send(embed = e))
+        if graph: asyncio.create_task(run_graph_updates(message)) # type: ignore

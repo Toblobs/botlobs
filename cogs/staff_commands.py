@@ -1,4 +1,4 @@
-# cogs > staff_commands.py // @toblobs // 10.03.26
+# cogs > staff_commands.py // @toblobs // 18.03.26
 
 from datetime import timedelta
 import time
@@ -13,6 +13,7 @@ from typing import List, Tuple
 
 from discord import app_commands
 from discord.ext import commands
+from discord.utils import remove_markdown, escape_mentions
 
 import numpy as np
 
@@ -22,7 +23,7 @@ from cogs import get_top_colored_role, upload_asset
 from cogs.utils.embeds import basic_embed
 from cogs.utils.permissions import *
 
-from database import dbio, reward_roles, reminders, users, rank
+from database import dbio, reward_roles, reminders, users, rank, quotes
 from database import xp as experience
 
 class StaffCommands(commands.Cog):
@@ -676,8 +677,52 @@ class StaffCommands(commands.Cog):
                     
                 await locked_channel.send(embed = basic_embed(title = "Channel Unlocked", description = "🔓 Channel unlocked.", bot = self.bot))
                 await reminders.delete_reminder(int(a[0]))
-# /quote-bank
-    
+
+    # /quote-bank
+    @app_commands.command(name = "quote-bank", description = "Search or modify the quote bank.")
+    @app_commands.describe(member = "The member to show all quotes for, optional", remove = "The message ID to remove a quote from, optional")
+    async def quote_bank(self, interaction: discord.Interaction, member: discord.Member | None = None, remove: str = ""):
+        
+        await interaction.response.defer()
+        
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
+        
+        if not is_staff(interaction.user): # type: ignore
+
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"Using this command is a permission for {guild.get_role(JR_MOD_ROLE).mention} and above only.", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+            return
+        
+        if remove == "":
+        
+            if member: all_quotes = list(await quotes.get_member_quotes(user_id = member.id))
+            else: all_quotes = list(await quotes.get_all_quotes())
+
+            all_length = len(all_quotes)
+
+            description = "**Quote ID | Quote Author | Quote Description**\n"
+            
+            for (a_quote_id, a_user_id, a_message_id, a_content, a_timestamp) in all_quotes[:25]:
+                
+                quote_author = guild.get_member(a_user_id) # type: ignore
+                date = datetime.fromtimestamp(int(a_timestamp))
+                
+                content = escape_mentions(remove_markdown(a_content))
+                
+                description += f"`{a_quote_id}` | {quote_author.mention} | {content}\n" # type: ignore
+
+            if all_length > 25: 
+                
+                description += " ... (showing first **25** quotes)"
+                
+            await interaction.followup.send(embed = basic_embed(title = "Quote Bank", description = description, bot = self.bot), allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+        
+        else:
+            
+            await quotes.delete_quote(int(remove))
+            
+            await interaction.followup.send(embed = basic_embed(title = "Quote Bank", description = f"Quote with ID `{int(remove)}` has been removed from the database.", bot = self.bot)) # type: ignore
+            
+            
     # /custom-set
     @app_commands.command(name = "custom-set", description = "Create or remove custom roles.")
     @app_commands.describe(member = "The member to modify the custom of", role = "The discord role to set as a custom, if it exists", name = "The name of the role", hexes = "Either a single hex like #0f0f0f, or formatted in a comma-separated list like [#0f0f0f,#1f1f1f]", color = "The black tie color pathway this custom is on", icon = "The role icon, optional", remove = "Toggling removal of the custom and role if they exist")

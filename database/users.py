@@ -1,4 +1,4 @@
-# database > users.py // @toblobs // 10.03.26
+# database > users.py // @toblobs // 18.03.26
 
 from .__init__ import *
 
@@ -20,7 +20,16 @@ async def get_user(user_id: int):
 
     return await cur.fetchone()
 
-async def set_user_intro(user_id: int, intro_text: str, birthday: int, country: str):
+async def get_all_users():
+    
+    cur = await db.conn.execute("""
+        SELECT user_id, xp, level, prestige, intro_text, birthday, country
+        FROM users
+    """)
+
+    return await cur.fetchall()
+
+async def set_user_intro(user_id: int, intro_text: str, birthday: int | None, country: str | None):
     
     await db.conn.execute("""
         UPDATE users

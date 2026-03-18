@@ -1,6 +1,8 @@
-# cogs > utils > embeds.py // @toblobs // 10.03.26
+# cogs > utils > embeds.py // @toblobs // 18.03.26
 
 from __init__ import *
+
+STAFF_ROLE = 1140049417626464316
 
 JR_MOD_ROLE = 1139119456862339082
 MOD_ROLE = 1139119339161784330
@@ -10,6 +12,18 @@ TOBLOBS_ROLE = 1139118721022046289
 staff = [JR_MOD_ROLE, MOD_ROLE, ADMIN_ROLE, TOBLOBS_ROLE]
 
 ELITIST_ROLE = 1140051108778225684
+SERVER_BOOSTER_ROLE = 1153738744600469635 
+
+BLOB_ROLE = 1139122746199134249
+SUIT_ROLE = 1140049620857266257
+SHADES_ROLE = 1140049685885767692
+SHADES_PLUS_ROLE = 1140049746908684399
+SHADES_PLUS_PLUS_ROLE = 1140049851850162226
+CLASSY_ROLE = 1140049921500795141
+CLASSY_PLUS_ROLE = 1140049956829405184
+MAX_CLASS_ROLE = 1140049990677450802
+
+levels = [BLOB_ROLE, SUIT_ROLE, SHADES_ROLE, SHADES_PLUS_ROLE, SHADES_PLUS_PLUS_ROLE, CLASSY_ROLE, CLASSY_PLUS_ROLE, MAX_CLASS_ROLE]
 
 def is_staff(member: discord.Member) -> bool:
 
@@ -52,4 +66,13 @@ def is_staff_supersede(member1: discord.Member, member2: discord.Member) -> bool
     else:
 
         return False
-        
+
+def is_at_least_level(member: discord.Member, role_id: int) -> bool:
+    
+    if role_id not in levels: return False
+    indx = levels.index(role_id)
+    
+    if any(r.id in levels[indx:] for r in member.roles):
+        return True
+    
+    return False

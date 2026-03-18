@@ -1,4 +1,4 @@
-# cogs > __init__.py // @toblobs // 10.03.26
+# cogs > __init__.py // @toblobs // 18.03.26
 
 import os
 import io
@@ -16,16 +16,26 @@ from dotenv import load_dotenv
 from .utils.embeds import basic_embed
 from PIL import Image
 
+from typing import Tuple
+
 DEFAULT_COLOR = discord.Color.from_rgb(183, 117, 219)
 
 load_dotenv("secrets.env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
+NEWS_API = os.getenv("NEWS_API")
+SPOTIFY_ID = os.getenv("SPOTIFY_ID")
+SPOTIFY_SECRET = os.getenv("SPOTIFY_SECRET")
+VERSION = os.getenv("VERSION")
+GITHUB_LINK = "https://github.com/Toblobs/botlobs"
+SPOTIPY_PORT = 55757
 
 BOT_ID = 1478062732392661164
 BOT_LOGS_CHANNEL = 1140063993034199091
 
 ASSET_CHANNEL_ID = 1479089948215742464
+
+HELP_PAGES_FOLDER = r"C:\Users\Tobil\Documents\botlobs\help-pages"
 
 async def upload_asset(bot: commands.Bot, file: discord.File):
 
@@ -47,16 +57,16 @@ def get_top_colored_role(member: discord.Member):
 
     return top_colored_role
 
-async def get_icon_binary(icon) -> bytes | None:
+async def get_icon_binary(icon, max_kb: int = 256, max_size: Tuple[int, int] = (64, 64)) -> bytes | None:
 
     if icon:
 
-        if icon.size > 256 * 1024:
+        if icon.size > max_kb * 1024:
             raise ValueError("Image provided is too large (max `256` kilobytes).")
 
         img = Image.open(io.BytesIO(await icon.read())) 
 
-        if img.size != (64, 64):
+        if (not img.size[0] <= max_size[0]) and (not img.size[1] <= max_size[1]):
             raise ValueError(f"Image provided must be `64`x`64` pixels.")
         
         with io.BytesIO() as image_binary:

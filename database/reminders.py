@@ -1,4 +1,4 @@
-# database > reminders.py // @toblobs // 07.03.26
+# database > reminders.py // @toblobs // 18.03.26
 
 from .__init__ import *
 
@@ -52,7 +52,7 @@ def parse_time_string(time_str: str) -> int:
 
 # All reminders add and delete instantly
 
-async def add_reminder(user_id: int, timestamp: int, channel_id: int, message: Optional[str], repeat: Optional[str]):
+async def add_reminder(user_id: int, timestamp: int, channel_id: int, message: Optional[str] = None, repeat: Optional[str] = None):
     
     cur = await db.conn.execute("""
         INSERT INTO reminders(user_id, timestamp, channel_id, message, repeat)
@@ -151,6 +151,10 @@ async def trigger_reminder(bot: commands.Bot, row):
             
             match reminder_type:
                 
+                case "cooldown":
+                    
+                    await delete_reminder(int(row[0]))
+                
                 case "unmute":
                     
                     guild = bot.get_guild(int(GUILD_ID)) # type: ignore
@@ -239,6 +243,37 @@ async def trigger_reminder(bot: commands.Bot, row):
                     
                     await locked_channel.send(embed = basic_embed(title = "Channel Unlocked", description = "🔓 Channel unlocked.", bot = bot))
                     
+                    await delete_reminder(int(row[0]))
+                
+                case "tierlistexpire":
+                    
+                    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+                    member_id = int(reminder_info) # type: ignore
+                    tier_channel = bot.get_channel(int(str(row[5]).split(':')[2]))
+                    
+                    fun_cog = bot.get_cog("FunCommands")
+                    if member_id in fun_cog.live_tierlists.keys(): # type: ignore
+                        del fun_cog.live_tierlists[member_id] # type: ignore
+                        
+                    await tier_channel.send(embed = basic_embed(title = "Tierlist Generator", description = f"Live tierlist ended.", bot = bot)) # type: ignore
+                    
+                    await delete_reminder(int(row[0]))
+                                   
+                case "event":
+                    
+                    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+                    member = await bot.fetch_user(int(reminder_info)) # type: ignore
+                    
+                    #blob_role = guild.get_role(1139122746199134249) # type: ignore
+                
+                    try: event_thread = guild.get_channel_or_thread(int(str(row[5]).split(':')[4])) # type: ignore
+                    except: event_thread = None 
+                    
+                    start = int(str(row[5]).split(':')[2])
+                    end = int(str(row[5]).split(':')[3])
+                    
+                    if event_thread: await event_thread.send(content = f"", embed = basic_embed(title = "Event", description = f"An event hosted by {member.mention} is about to begin!\n> - **Event Start Time**: <t:{start}:F> (<t:{start}:R>)\n> - **Event End Time**: <t:{end}:F> (<t:{end}:R>)", bot = bot), allowed_mentions = discord.AllowedMentions(roles = True, everyone = True)) # type: ignore
+
                     await delete_reminder(int(row[0]))
                     
 async def reminder_scheduler(bot: commands.Bot, wakeup: asyncio.Event):

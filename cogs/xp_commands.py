@@ -1,4 +1,4 @@
-# cogs > xp_commands.py // @toblobs // 10.03.26
+# cogs > xp_commands.py // @toblobs // 18.03.26
 
 from datetime import timedelta
 import time
@@ -101,7 +101,7 @@ class XPCommands(commands.Cog):
     @app_commands.choices(last = [app_commands.Choice(name = "All Time", value = "all"), app_commands.Choice(name = "Last Day", value = "daily"), app_commands.Choice(name = "Last Week", value = "weekly"), app_commands.Choice(name = "Last Month", value = "monthly")])
     async def leaderboard(self, interaction: discord.Interaction, page: int | None = 1, member: discord.Member | None = None, last: app_commands.Choice[str] = "all", graph: bool | None = False): # type: ignore
         
-        time_periods = {"daily": 86400, "weekly": 604800, "monthly": 2592000}
+        time_periods = {"daily": 86400, "weekly": 604800, "monthly": 2592000, "all": 0}
 
         # Work out last timestamp
         if last != "all": 
@@ -636,8 +636,9 @@ class XPCommands(commands.Cog):
 
         percentage = (xp_gained / full_xp_to_next) * 100
 
-        messages_left = [int((full_xp_to_next - xp_gained) / int(XP_MIN * multiplier)), int((full_xp_to_next - xp_gained) / int(XP_MAX * multiplier))]
-
+        try: messages_left = [int((full_xp_to_next - xp_gained) / int(XP_MIN * multiplier)), int((full_xp_to_next - xp_gained) / int(XP_MAX * multiplier))]
+        except ZeroDivisionError: messages_left = [0, 0]
+            
         # Get top colored role
         top_colored_role = get_top_colored_role(member)
 
@@ -697,7 +698,10 @@ class XPCommands(commands.Cog):
         remaining_xp = target_xp - current_xp
 
         xp_per_message = [int(XP_MIN * multiplier), int(XP_MAX * multiplier)]
-        messages_left = [int(remaining_xp / xp_per_message[0]), int(remaining_xp / xp_per_message[1])]
+        
+        try: messages_left = [int(remaining_xp / xp_per_message[0]), int(remaining_xp / xp_per_message[1])]
+        except: messages_left = [0, 0]
+        
         average_messages_left = int(np.average(messages_left))
 
         cooldown_remaining = XP_COOLDOWN * average_messages_left
@@ -788,11 +792,11 @@ class XPCommands(commands.Cog):
             member = member or interaction.user # type: ignore
             mention = member.mention # type: ignore
 
-            red_roles = [guild.get_role(r) for r in [1140051191858999296, 1237874944445124761, 1237465605230035056, 1140058151127887893]] # type: ignore
+            red_roles = [guild.get_role(r) for r in [1140051191858999296, 1237874944445124761, 1237465605230035056, 1140058151127887893, 1483512340757479424]] # type: ignore
             orange_roles = [guild.get_role(r) for r in [1140058044215066734, 1153753060280127620, 1153753401935544371, 1238511692166467636, 1259540433713758228]] # type: ignore
             yellow_roles = [guild.get_role(r) for r in [1140057537601880234, 1140057782335315988, 1155092295922753627, 1240726186175369408, 1237465948055933059, 1469827589370675362, 1237856492695326831]] # type: ignore
             green_roles = [guild.get_role(r) for r in [1140057941010022451, 1237474304229113908, 1240726293960724580, 1300743802608156762, 1140051007888437338,1140051051463049286]] # type: ignore
-            blue_roles = [guild.get_role(r) for r in [1237465819450179674, 1237473082923286528, 1186250517698064486, 1240726353351933972, 1255272111166198000]] # type: ignore
+            blue_roles = [guild.get_role(r) for r in [1237465819450179674, 1237473082923286528, 1186250517698064486, 1240726353351933972, 1255272111166198000, 1480730039728214199]] # type: ignore
             purple_roles = [guild.get_role(r) for r in [1153738744600469635, 1174358352751513670, 1240003021430194187, 1469489743946584094, 1237474170624016527]] # type: ignore
             monochrome_roles = [guild.get_role(r) for r in [1237475644150124604, 1166292797570175007, 1202922911384469536, 1241356168475971594, 1242801634820493362]] # type: ignore
 

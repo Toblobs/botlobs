@@ -1,4 +1,4 @@
-# main.py // @toblobs // 10.03.26
+# main.py // @toblobs // 18.03.26
 
 from __init__ import *
 
@@ -8,6 +8,8 @@ import asyncio
 from cogs.general_commands import GeneralCommands
 from cogs.xp_commands import XPCommands
 from cogs.staff_commands import StaffCommands
+from cogs.fun_commands import FunCommands
+from cogs.tobs_commands import TobsCommands, import_dates
 
 from cogs.utils.embeds import basic_embed
 from database import XP_ENABLED, dbio, schema, xp, reminders, users
@@ -75,6 +77,8 @@ async def on_ready():
     await bot.add_cog(GeneralCommands(bot, wakeup))
     await bot.add_cog(XPCommands(bot))
     await bot.add_cog(StaffCommands(bot, wakeup))
+    await bot.add_cog(FunCommands(bot, wakeup))
+    await bot.add_cog(TobsCommands(bot, wakeup))
 
     # Sync tree
     await bot.tree.sync()
@@ -92,7 +96,7 @@ async def main():
     
     print("[!] Connected to Database")
 
-    #await xp.import_xp() # for testing
+    #await import_dates()
 
     asyncio.create_task(dbio.commit_loop())
     
