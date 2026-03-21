@@ -1,4 +1,4 @@
-# __init__.py // @toblobs // 18.03.26
+# __init__.py // @toblobs // 21.03.26
 
 import os
 import numpy
@@ -15,3 +15,10 @@ load_dotenv("secrets.env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
 __version__ = os.getenv("VERSION")
+
+CONVERT_PATH = r"C:\Users\Tobil\Documents\botlobs\convert-temp-images"
+BANNER_FOLDER = r"C:\Users\Tobil\Documents\botlobs\banners"
+TOBLOBS_ID = 762238670656634921
+SHADY_LOUNGE_ID = 1140054367312019608
+
+METRICS_CHANNEL = 1484642590115758210

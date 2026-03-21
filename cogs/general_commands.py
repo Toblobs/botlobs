@@ -1,4 +1,4 @@
-# cogs > general.py // @toblobs // 18.03.26
+# cogs > general.py // @toblobs // 21.03.26
 
 from datetime import timedelta
 from dateutil import relativedelta
@@ -10,8 +10,10 @@ import io
 import time
 import asyncio
 import psutil
+import uuid
 
 from typing import List, Tuple
+from copy import copy
 
 from discord import TextChannel, app_commands
 from discord.ext import commands
@@ -28,8 +30,120 @@ from matplotlib.lines import Line2D
 from cogs.utils.embeds import basic_embed
 from cogs.utils.permissions import *
 from cogs.utils.emoji import *
+from cogs.utils.convert import *
 
 from database import xp, reminders, users
+
+async def send_about(bot, guild, channel = None, interaction = None):
+    
+    INVITE_CODE = "X53PzUqAvK"
+    guild = bot.get_guild(int(GUILD_ID)) # type: ignore
+    banner = guild.banner # type: ignore
+
+    information = {f"{get_emoji("botlobs")} **Server ID**": f"`{GUILD_ID}`", f"{get_emoji("lapislapels")} **Owner**": f"{bot.get_user(762238670656634921).mention}", f"{get_emoji("blob")} **Members**": f"`{sum(1 for m in guild.members if not m.bot)}`", # type: ignore
+                    f"{get_emoji("artandcreatives")} **Created At**": f"<t:{int(guild.created_at.timestamp())}:D>", f"{get_emoji("admin")} **Opened At**": f"<t:1695164400:D>", f"{get_emoji("serverbooster")} **Boost Level**": f"Level `{guild.premium_tier}` (`{guild.premium_subscription_count}` Boosts)", # type: ignore
+                    f"{get_emoji("blacktie")} **Roles**": f"`{len(guild.roles)}`", f"{get_emoji("writingandbooks")} **Categories**": f"`{len([c for c in guild.channels if isinstance(c, discord.CategoryChannel)])}`", f"{get_emoji("irlfriends")} **Default Role**": f"{guild.get_role(1139122746199134249).mention}", # type: ignore
+                    f"{get_emoji("suit")} **Text Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.TextChannel)])}`", f"{get_emoji("music")} **Voice Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.VoiceChannel)])}`", f"{get_emoji("cluefinder")} **This Channel**": f"{interaction.channel.mention if interaction else channel.mention}", # type: ignore
+                    f"{get_emoji("scarfman")} **Emojis**": f"`{len(guild.emojis)}`", f"{get_emoji("bots")} **Bots**": f"`{sum(1 for m in guild.members if m.bot)}`", f"{get_emoji("eventannouncements")} Invite Code:": f"https://discord.com/invite/{INVITE_CODE}", # type: ignore
+    }
+
+    e = discord.Embed(title = "The Toblobs Lounge: About Page", color = DEFAULT_COLOR, timestamp = datetime.now())
+    e.set_author(name = f"BotLobs", icon_url = bot.user.display_avatar.url) # type: ignore
+
+    for name, data in information.items(): e.add_field(name = name, value = data, inline = True)
+
+    if banner:
+        e.add_field(name = "**Server Banner**:", value = "\u200b")
+        e.set_image(url = banner.url)
+
+    e.set_thumbnail(url = bot.user.display_avatar.url) # type: ignore
+    
+    if interaction: await interaction.response.send_message(embed = e)
+    elif channel: await channel.send(embed = e)
+
+async def send_introduction(bot, wakeup, interaction = None):
+    
+    guild =  bot.get_guild(int(GUILD_ID)) # type: ignore
+    member = interaction.user # type: ignore
+        
+    class IntroductionModal(discord.ui.Modal):
+        
+        def __init__(self, bot, wakeup: asyncio.Event):
+            
+            super().__init__(title = "Introduction Form")
+            
+            self.add_item(discord.ui.TextInput(label = "About Me", placeholder = "Enter your introdution text here...", style = discord.TextStyle.paragraph))
+            self.add_item(discord.ui.TextInput(label = "Birthday", placeholder = "Your birthday in format (DD-MM), eg. 24-07 (optional)", required = False))
+            self.add_item(discord.ui.TextInput(label = "Country", placeholder = "Copypaste a Unicode country emoji into here... (optional)", required = False))
+
+            self.bot = bot
+            self.wakeup = wakeup
+        
+        def next_date(self, dt):
+            
+            try:
+                
+                today = datetime.today()
+                target = datetime(year = today.year, month = dt.month, day = dt.day) # type: ignore
+            
+            except:
+                
+                raise ValueError("Invalid day/month combination.")
+            
+            if target <= today:
+                target = datetime(year = today.year + 1, month = dt.month, day = dt.day) # type: ignore
+            
+            return target
+            
+        async def on_submit(self, interaction: discord.Interaction):
+            
+            about_me = self.children[0].value # type: ignore
+            birthday = self.children[1].value # type: ignore
+            country = self.children[2].value # type: ignore
+            
+            try:
+                
+                if birthday: 
+                    try: _date = datetime.strptime(birthday, "%d-%m") 
+                    except ValueError: raise AssertionError(f"`date` is not a valid date")
+                
+                else: _date = 0
+                
+                if country: assert emoji.is_emoji(country), f"`country` is not is not an emoji"
+            
+            except AssertionError as e:
+                
+                await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
+                return
+
+            if _date: target_date = int(self.next_date(_date).timestamp())
+            else: target_date = None
+
+            await users.set_user_intro(member.id, about_me, target_date, country)
+            await interaction.response.send_message(embed = basic_embed(title = "Introduction Form", description = f"Introduction set.", bot = self.bot), ephemeral = True)
+                
+    if interaction: await interaction.response.send_modal(IntroductionModal(bot = bot, wakeup = wakeup))
+
+async def send_bot_status(bot, guild, channel, uptime):
+
+    process = psutil.Process(os.getpid())
+
+    cpu = psutil.cpu_percent()
+    mem = psutil.virtual_memory().percent
+    
+    # Generate embed
+    e = discord.Embed(title = "Bot Status", color = DEFAULT_COLOR, timestamp = datetime.now())
+    e.set_author(name = f"BotLobs", icon_url = bot.user.display_avatar.url) # type: ignore
+    
+    e.description = f"""An open source Discord bot, written to power The Toblobs Lounge.\n## __Bot Information__
+    > - **Current Version**: `v{VERSION}` (last updated <t:1774051200:R>)
+    > - **Codebase**: {GITHUB_LINK}
+    > - **Documentation & Help**: *Coming soon...*
+    ## __Program Information__
+    > - **Uptime**: `{uptime}`    
+    """
+    
+    await channel.send(embed = e)
 
 class GeneralCommands(commands.Cog):
 
@@ -124,6 +238,11 @@ class GeneralCommands(commands.Cog):
         
         return buffer
     
+    def get_uptime(self):
+            
+            seconds = int(time.time() - self.start_time)
+            return f"{seconds // 3600}h {(seconds % 3600) // 60}m {seconds % 60}s"
+        
     ### commands
     
     # /help
@@ -163,9 +282,9 @@ class GeneralCommands(commands.Cog):
                 page = int(self.values[0])
                 self.parent_view.page = page # type: ignore
 
-                e = await self.parent_view.load_page() # type: ignore
+                e, file = await self.parent_view.load_page() # type: ignore
 
-                await interaction.response.edit_message(embed = e, view = self.parent_view)
+                await interaction.response.edit_message(embed = e, view = self.parent_view, attachments = [file])
 
             async def interaction_check(self, interaction) -> bool:
                 return interaction.user.id == self.parent_view.user_id # type: ignore
@@ -179,7 +298,7 @@ class GeneralCommands(commands.Cog):
                 self.user_id = interaction.user.id
                 self.page = page
                 self.add_item(PageSelect(self))
-            
+
             async def load_page(self): return await build_help_embed(self.page)
 
             @discord.ui.button(label = "◀ Previous")
@@ -188,16 +307,16 @@ class GeneralCommands(commands.Cog):
                 if self.page > 1:
                     self.page -= 1
                 
-                embed = await self.load_page()
-                await interaction.response.edit_message(embed = embed, view = self)
+                embed, file = await self.load_page()
+                await interaction.response.edit_message(embed = embed, view = self, attachments = [file])
 
             @discord.ui.button(label = "Next ▶")
             async def next(self, interaction, button):
 
                 self.page += 1
                 
-                embed = await self.load_page()
-                await interaction.response.edit_message(embed = embed, view = self)
+                embed, file = await self.load_page()
+                await interaction.response.edit_message(embed = embed, view = self, attachments = [file])
         
         commands_to_page = {
                             # General Commands
@@ -246,28 +365,7 @@ class GeneralCommands(commands.Cog):
     @app_commands.command(name = "about", description = "Shows the info page for the server.")
     async def about(self, interaction: discord.Interaction):
         
-        INVITE_CODE = "X53PzUqAvK"
-        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
-        banner = guild.banner # type: ignore
-
-        information = {f"{get_emoji("botlobs")} **Server ID**": f"`{GUILD_ID}`", f"{get_emoji("lapislapels")} **Owner**": f"{self.bot.get_user(762238670656634921).mention}", f"{get_emoji("blob")} **Members**": f"`{sum(1 for m in guild.members if not m.bot)}`", # type: ignore
-                       f"{get_emoji("artandcreatives")} **Created At**": f"<t:{int(guild.created_at.timestamp())}:D>", f"{get_emoji("admin")} **Opened At**": f"<t:1695164400:D>", f"{get_emoji("serverbooster")} **Boost Level**": f"Level `{guild.premium_tier}` (`{guild.premium_subscription_count}` Boosts)", # type: ignore
-                       f"{get_emoji("blacktie")} **Roles**": f"`{len(guild.roles)}`", f"{get_emoji("writingandbooks")} **Categories**": f"`{len([c for c in guild.channels if isinstance(c, discord.CategoryChannel)])}`", f"{get_emoji("irlfriends")} **Default Role**": f"{guild.get_role(1139122746199134249).mention}", # type: ignore
-                       f"{get_emoji("suit")} **Text Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.TextChannel)])}`", f"{get_emoji("music")} **Voice Channels**": f"`{len([c for c in guild.channels if isinstance(c, discord.VoiceChannel)])}`", f"{get_emoji("cluefinder")} **This Channel**": f"{interaction.channel.mention}", # type: ignore
-                       f"{get_emoji("scarfman")} **Emojis**": f"`{len(guild.emojis)}`", f"{get_emoji("bots")} **Bots**": f"`{sum(1 for m in guild.members if m.bot)}`", f"{get_emoji("eventannouncements")} Invite Code:": f"https://discord.com/invite/{INVITE_CODE}", # type: ignore
-        }
-
-        e = discord.Embed(title = "The Toblobs Lounge: About Page", color = DEFAULT_COLOR, timestamp = datetime.now())
-        e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
-
-        for name, data in information.items(): e.add_field(name = name, value = data, inline = True)
-
-        if banner:
-            e.add_field(name = "**Server Banner**:", value = "\u200b")
-            e.set_image(url = banner.url)
-
-        e.set_thumbnail(url = self.bot.user.display_avatar.url) # type: ignore
-        await interaction.response.send_message(embed = e)
+        await send_about(self.bot, self.bot.get_guild(int(GUILD_ID)), interaction = interaction) # type: ignore
 
     # /info
     @app_commands.command(name = "info", description = "Shows the info page for a server member.")
@@ -768,11 +866,199 @@ class GeneralCommands(commands.Cog):
         else:
             
           await interaction.response.send_message(embed = e)  
-          
+     
     # /convert
-    
-    # /edit-image
+    @app_commands.command(name = "convert", description = "Convert anything to anything, powered by p2r3/convert.")
+    @app_commands.describe(input = "The input file to convert", output = "The output format to convert to.")
+    async def convert(self, interaction: discord.Interaction, input: discord.Attachment, output: str):
+        
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
+        
+        limits = {BLOB_ROLE: (60, 10),
+                  SUIT_ROLE: (60, 10),
+                  SHADES_ROLE: (60, 10),
+                  SHADES_PLUS_ROLE: (30, 10),
+                  SHADES_PLUS_PLUS_ROLE: (30, 10),
+                  CLASSY_ROLE: (30, 10),
+                  CLASSY_PLUS_ROLE: (30, 1000),
+                  MAX_CLASS_ROLE: (30, 1000),
+                  SERVER_BOOSTER_ROLE: (30, 1000)}
+        
+        our_limits = (60, 10)
+        
+        converts_done = 0
+        convert_reminder = -1
+        
+        tomorrow = datetime.now() + timedelta(days = 1)
+        tmr_timestamp = int(tomorrow.timestamp())
 
+        for role_id, limits_tup in limits.items():
+            if role_id in [r.id for r in interaction.user.roles]: # type: ignore
+                if our_limits[0] > limits_tup[0] or our_limits[1] < limits_tup[1]:
+                    our_limits = copy(limits_tup)
+        
+        all_reminders = await reminders.get_due_reminders()   
+            
+        for (reminder_id, user_id, timestamp, repeat, channel_id, message) in all_reminders:
+            
+            if message: 
+                
+                if int(user_id) == int(BOT_ID) and message == f"cooldown:convert:{interaction.user.id}":
+                    
+                    await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You have a cooldown to using this command until <t:{timestamp}:F> (<t:{timestamp}:R>).", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+                    return
+                
+                if int(user_id) == int(BOT_ID) and (message.split(':')[0] == 'usage') and (message.split(':')[1] == 'convert') and (message.split(':')[2] == str(interaction.user.id)):
+                    
+                    convert_reminder = reminder_id
+                    converts_done = int(message.split(':')[3])                    
+                    converts_left = our_limits[1] - converts_done
+                    
+                    if converts_left == 0:
+                        
+                        await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You have no more conversions left today. Try again on <t:{tmr_timestamp}:D> (<t:{tmr_timestamp}:R>).", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+                        return
+                    
+        await interaction.response.defer()
+        
+        uid = str(uuid.uuid4())
+        
+        input_ext = input.filename.split('.')[-1]
+        input_path = CONVERT_PATH + fr"\{uid}.{input_ext}"
+        output_path = None
+        
+        try:
+            
+            await download_file(input.url, input_path)
+            output_path = await asyncio.wait_for(run_docker_command(comm = "convert", input_path = input_path, output_ext = output.lower()), timeout = 60)
+            
+            file = discord.File(output_path)
+            
+            if os.path.getsize(output_path) > 45_000_000:
+                raise Exception("The output file size is too large (over `45MB`).")
+
+            await interaction.followup.send(file = file)
+            
+            converts_done += 1
+            
+            await reminders.add_reminder(BOT_ID, int(datetime.now().timestamp()) + our_limits[0], interaction.channel_id, message = f"cooldown:convert:{interaction.user.id}", repeat = None) # type: ignore
+            
+            if convert_reminder != -1: await reminders.delete_reminder(convert_reminder)
+            await reminders.add_reminder(BOT_ID, tmr_timestamp, interaction.channel_id, message = f"usage:convert:{interaction.user.id}:{converts_done}", repeat = None) # type: ignore
+
+            self.wakeup.set()
+        
+        except asyncio.TimeoutError:
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"The conversion took longer than `{60}` seconds and timed out.", bot = self.bot), ephemeral = True)
+            return
+        
+        except Exception as e:
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
+            return
+        
+        finally: cleanup(input_path, output_path)
+              
+    # /edit-image
+    @app_commands.command(name = "edit-image", description = "Edit an image by adding some filters.")
+    @app_commands.describe(input = "The input image to edit", value = "The value to operate on", operation = "What type of editing operation to do.")
+    @app_commands.choices(operation = [app_commands.Choice(name = "Blur Image", value = "blur"),
+                                       app_commands.Choice(name = "Sharpen Image", value = "sharpen"),
+                                       app_commands.Choice(name = "Monochrome Image", value = "monochrome"),
+                                       app_commands.Choice(name = "Invert Image", value = "invert"),
+                                       app_commands.Choice(name = "Shift Hue of Image", value = "hue"),])
+    async def edit_image(self, interaction: discord.Interaction, input: discord.Attachment, value: str, operation: app_commands.Choice[str]):
+        
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
+        
+        limits = {BLOB_ROLE: (60, 10),
+                  SUIT_ROLE: (60, 10),
+                  SHADES_ROLE: (60, 10),
+                  SHADES_PLUS_ROLE: (30, 10),
+                  SHADES_PLUS_PLUS_ROLE: (30, 10),
+                  CLASSY_ROLE: (30, 10),
+                  CLASSY_PLUS_ROLE: (30, 1000),
+                  MAX_CLASS_ROLE: (30, 1000),
+                  SERVER_BOOSTER_ROLE: (30, 1000)}
+        
+        our_limits = (60, 10)
+        
+        edits_done = 0
+        edit_reminder = -1
+        
+        tomorrow = datetime.now() + timedelta(days = 1)
+        tmr_timestamp = int(tomorrow.timestamp())
+
+        for role_id, limits_tup in limits.items():
+            if role_id in [r.id for r in interaction.user.roles]: # type: ignore
+                if our_limits[0] > limits_tup[0] or our_limits[1] < limits_tup[1]:
+                    our_limits = copy(limits_tup)
+        
+        all_reminders = await reminders.get_due_reminders()   
+            
+        for (reminder_id, user_id, timestamp, repeat, channel_id, message) in all_reminders:
+            
+            if message: 
+                
+                if int(user_id) == int(BOT_ID) and message == f"cooldown:edit:{interaction.user.id}":
+                    
+                    await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You have a cooldown to using this command until <t:{timestamp}:F> (<t:{timestamp}:R>).", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+                    return
+                
+                if int(user_id) == int(BOT_ID) and (message.split(':')[0] == 'usage') and (message.split(':')[1] == 'edit') and (message.split(':')[2] == str(interaction.user.id)):
+                    
+                    edit_reminder = reminder_id
+                    edits_done = int(message.split(':')[3])                    
+                    edits_left = our_limits[1] - edits_done
+                    
+                    if edits_left == 0:
+                        
+                        await interaction.response.send_message(embed = basic_embed(title = "Error Encountered!", description = f"You have no more edits left today. Try again on <t:{tmr_timestamp}:D> (<t:{tmr_timestamp}:R>).", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+                        return
+                    
+        await interaction.response.defer()
+        
+        uid = str(uuid.uuid4())
+        
+        input_ext = input.filename.split('.')[-1]
+        
+        if input_ext.lower() not in ["png", "jpg", "jpeg", "webp"]:
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"File type must be one of `png`, `jpg`, `jpeg` or `webp`.", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+            return
+            
+        input_path = CONVERT_PATH + fr"\{uid}.{input_ext}"
+        output_path = None
+        
+        try:
+            
+            await download_file(input.url, input_path)
+            output_path = await asyncio.wait_for(run_docker_command(comm = "edit-image", input_path = input_path, output_ext = input_ext, operation = operation.value, value = value), timeout = 60)
+            
+            file = discord.File(output_path)
+            
+            if os.path.getsize(output_path) > 45_000_000:
+                raise Exception("The output file size is too large (over `45MB`).")
+
+            await interaction.followup.send(file = file)
+            
+            edits_done += 1
+            
+            await reminders.add_reminder(BOT_ID, int(datetime.now().timestamp()) + our_limits[0], interaction.channel_id, message = f"cooldown:edit:{interaction.user.id}", repeat = None) # type: ignore
+            
+            if edit_reminder != -1: await reminders.delete_reminder(edit_reminder)
+            await reminders.add_reminder(BOT_ID, tmr_timestamp, interaction.channel_id, message = f"usage:edit:{interaction.user.id}:{edits_done}", repeat = None) # type: ignore
+
+            self.wakeup.set()
+        
+        except asyncio.TimeoutError:
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"The edit took longer than `{60}` seconds and timed out.", bot = self.bot), ephemeral = True)
+            return
+        
+        except Exception as e:
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"{e}", bot = self.bot), ephemeral = True)
+            return
+        
+        finally: cleanup(input_path, output_path)
+            
     # /color
     @app_commands.command(name = 'color', description = "Show a hex color or gradient of sequence of colors.")
     @app_commands.describe(hexes = "Either a single hex like #0f0f0f, or formatted in a comma-separated list like [#0f0f0f,#1f1f1f]")
@@ -1012,11 +1298,6 @@ class GeneralCommands(commands.Cog):
         if graph and not is_moderator(interaction.user): # type: ignore
             await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"Using the `graph` argument is a permission for {guild.get_role(MOD_ROLE).mention} and above only.", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
             return
-            
-        def get_uptime(self):
-            
-            seconds = int(time.time() - self.start_time)
-            return f"{seconds // 3600}h {(seconds % 3600) // 60}m {seconds % 60}s"
 
         async def run_graph_updates(message: discord.Message):
             
@@ -1028,15 +1309,25 @@ class GeneralCommands(commands.Cog):
             
             prev_net = psutil.net_io_counters()
             
-            for i in range(60 * 12 * 1): # last value is hours running
+            for i in range(720):
                 
                 cpu = self.process.cpu_percent(interval = None) # type: ignore
                 mem = self.process.memory_percent() # type: ignore
                 
                 current_net = psutil.net_io_counters()
                 
-                net_usage = ((current_net.bytes_sent - prev_net.bytes_sent) + (current_net.bytes_recv - prev_net.bytes_sent)) / 1024
+                delta_bytes = ((current_net.bytes_sent - prev_net.bytes_sent) + (current_net.bytes_recv - prev_net.bytes_sent))
                 
+                if i == 0:
+                    net_usage = 0
+                
+                else:
+                    
+                    if delta_bytes < 0 or delta_bytes > 100 * 1024 * 1024: net_usage = 0
+                    else: net_usage = delta_bytes / 1024 / 5
+                
+                current_net = prev_net
+
                 cpu_data.append(cpu)
                 mem_data.append(mem)
                 net_data.append(net_usage)
@@ -1058,13 +1349,13 @@ class GeneralCommands(commands.Cog):
                 e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
 
                 e.description = f"""An open source Discord bot, written to power The Toblobs Lounge.\n## __Bot Information__
-        > - **Current Version**: `v{VERSION}` (last updated <t:1773792000:R>)
+        > - **Current Version**: `v{VERSION}` (last updated <t:1774051200:R>)
         > - **Codebase**: {GITHUB_LINK}
         > - **Documentation & Help**: *Coming soon...*
         ## __Program Information__
-        > - **Uptime**: `{get_uptime(self)}`    
+        > - **Uptime**: `{self.get_uptime()}`    
         """
-                e.add_field(name = "Current", value = f"> - **CPU**: `{cpu:.1f}%`\n> - **Memory**: `{mem:.1f}%`\n> - **Network**: `{int(net_usage / 5)} KB/s`")
+                e.add_field(name = "Current", value = f"> - **CPU**: `{cpu:.1f}%`\n> - **Memory**: `{mem:.1f}%`\n> - **Network**: `{int(net_usage)} KB/s`")
                 e.add_field(name = "Peak (5 min)", value = f"> - **CPU**: `{peak_cpu:.1f}%`\n> - **Memory**: `{peak_mem:.1f}%`\n> - **Network**: `{int(peak_net)} KB/s`")
 
                 e.set_image(url = "attachment://botstats.png")
@@ -1119,7 +1410,7 @@ class GeneralCommands(commands.Cog):
         
         self.process = psutil.Process(os.getpid())
 
-        uptime = get_uptime(self)
+        uptime = self.get_uptime()
         
         cpu = psutil.cpu_percent()
         mem = psutil.virtual_memory().percent
@@ -1129,7 +1420,7 @@ class GeneralCommands(commands.Cog):
         e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
         
         e.description = f"""An open source Discord bot, written to power The Toblobs Lounge.\n## __Bot Information__
-        > - **Current Version**: `v{VERSION}` (last updated <t:1773792000:R>)
+        > - **Current Version**: `v{VERSION}` (last updated <t:1774051200:R>)
         > - **Codebase**: {GITHUB_LINK}
         > - **Documentation & Help**: *Coming soon...*
         ## __Program Information__

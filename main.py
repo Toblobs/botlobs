@@ -1,9 +1,11 @@
-# main.py // @toblobs // 18.03.26
+# main.py // @toblobs // 21.03.26
 
 from __init__ import *
 
 import traceback
 import asyncio
+
+from cogs.passives import Automation, IntroView, ReactionView
 
 from cogs.general_commands import GeneralCommands
 from cogs.xp_commands import XPCommands
@@ -19,10 +21,10 @@ intents.typing = False
 import logging
 logging.basicConfig(level=logging.INFO)
 
-#flags = discord.ApplicationFlags()
-
 bot = commands.Bot(command_prefix = '/', intents = intents)
 
+
+# ----
 @bot.event
 async def on_message(message):
 
@@ -44,7 +46,7 @@ async def on_member_join(member: discord.Member):
     # Add to DB if not present
     try: await users.get_user(member.id)
     except: await users.add_user(member.id)    
-    
+        
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
     
@@ -73,12 +75,27 @@ async def on_ready():
     
     global wakeup
 
+    # Add persistent views
+    intro_view = IntroView(bot, wakeup)
+    bot.add_view(intro_view)
+    
+    reaction_views = [ReactionView(bot, ["miscannouncements", "eventannouncements"]),
+                      ReactionView(bot, ["videogames", "algodoo", "artandcreatives", "music", "writingandbooks", "sports", "pollnotifs"]),
+                      ReactionView(bot, ["redtie", "tangerina", "scottishxanadu"]),
+                      ReactionView(bot, ["saffronshades", "tealoblobs", "carminecuffs"]),
+                      ReactionView(bot, ["tobluebs", "blossomblitz", "celadoncultist"])
+    ]    
+    
+    for r in reaction_views: bot.add_view(r)
+    
     # Add cogs
+    await bot.add_cog(Automation(bot, wakeup))
+    
     await bot.add_cog(GeneralCommands(bot, wakeup))
     await bot.add_cog(XPCommands(bot))
     await bot.add_cog(StaffCommands(bot, wakeup))
     await bot.add_cog(FunCommands(bot, wakeup))
-    await bot.add_cog(TobsCommands(bot, wakeup))
+    await bot.add_cog(TobsCommands(bot, wakeup, [intro_view] + reaction_views))
 
     # Sync tree
     await bot.tree.sync()

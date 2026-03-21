@@ -1,4 +1,4 @@
-# utils > emoji.py // @toblobs // 09.03.26
+# utils > emoji.py // @toblobs // 21.03.26
 
 import os
 import emoji
@@ -124,7 +124,6 @@ custom_emoji_map = {
     "youtuber": "<:youtuber:1479979248440840253>",
     "youtubesupporter": "<:youtubesupporter:1479979249870966975>",
 }
-
 
 def get_emoji(emoji_str: str) -> str:
     

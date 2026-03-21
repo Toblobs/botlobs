@@ -1,4 +1,4 @@
-# cogs > utils > music.py // @toblobs // 18.03.26
+# cogs > utils > music.py // @toblobs // 21.03.26
 
 from __init__ import *
 
@@ -24,7 +24,7 @@ ytdl_opts = {
 }
 
 FFMPEG_OPTIONS = {
-     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -reconnect_on_network_error 1",
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5", 
     "options": "-vn -c:a libopus -b:a 192k"
 }
 
@@ -117,8 +117,20 @@ class MusicPlayer:
                 return
         
             self.current = song
+            
+            info = await asyncio.get_event_loop().run_in_executor(None, lambda: ytdl.extract_info(song.url, download = False))
 
-            source = await discord.FFmpegOpusAudio.from_probe(song.url, before_options = FFMPEG_OPTIONS["before_options"], options = FFMPEG_OPTIONS["options"])
+            if not info:
+                self.next.set()
+                continue
+
+            stream_url = info.get("url")
+
+            if not stream_url:
+                self.next.set()
+                continue 
+            
+            source = await discord.FFmpegOpusAudio.from_probe(stream_url, before_options = FFMPEG_OPTIONS["before_options"], options = FFMPEG_OPTIONS["options"])
 
             vc: discord.VoiceClient = self.guild.voice_client # type: ignore
             if not vc: return

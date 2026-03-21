@@ -1,4 +1,4 @@
-# database > reminders.py // @toblobs // 18.03.26
+# database > reminders.py // @toblobs // 21.03.26
 
 from .__init__ import *
 
@@ -155,6 +155,10 @@ async def trigger_reminder(bot: commands.Bot, row):
                     
                     await delete_reminder(int(row[0]))
                 
+                case "usage":
+                    
+                    await delete_reminder(int(row[0]))
+                    
                 case "unmute":
                     
                     guild = bot.get_guild(int(GUILD_ID)) # type: ignore

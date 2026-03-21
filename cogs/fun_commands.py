@@ -1,4 +1,4 @@
-# cogs > fun_commands.py // @toblobs // 18.03.26
+# cogs > fun_commands.py // @toblobs // 21.03.26
 
 from datetime import timedelta
 from zoneinfo import ZoneInfo
@@ -34,6 +34,53 @@ from cogs.utils.music import *
 
 from database import reminders, quotes
 
+async def send_qotd(bot, guild, channel):
+    
+    pool: list = list(await quotes.get_all_quotes()) or []
+        
+    (quote_id, user_id, message_id, content, timestamp) = random.choice(pool)
+    
+    quote_author = guild.get_member(user_id) # type: ignore
+
+    # Get avatar
+    async with aiohttp.ClientSession() as session:
+        async with session.get(quote_author.display_avatar.url) as resp: # type: ignore
+            avatar_bytes = await resp.read()
+            
+    avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+    avatar = avatar.resize((128, 128))
+    
+    # Generate quote image
+    img = Image.new("RGBA", (900, 300), (54, 57, 63))
+    draw = ImageDraw.Draw(img)
+    
+    try: font = ImageFont.truetype("fonts/arial.ttf", 36)
+    except: font = ImageFont.load_default(size = 36)
+    
+    try: small_font = ImageFont.truetype("fonts/arial.ttf", 18)
+    except: small_font = ImageFont.load_default(size = 18)
+    
+    wrapped = textwrap.fill(content, width = 30)
+    draw.text((200, 80), f'{wrapped}', font = font, fill = "white")
+    
+    date = datetime.fromtimestamp(int(timestamp))
+    footer = f"— {quote_author.name}, {date.strftime("%b %d %Y")} | Quote ID: {quote_id}" # type: ignore
+    draw.text((200, 200), footer, font = small_font, fill = (200, 200, 200))
+    
+    img.paste(avatar, (40, 80), avatar)
+    
+    buffer = io.BytesIO()
+    img.save(buffer, "PNG")
+    buffer.seek(0)
+    
+    file = discord.File(buffer, filename = "member_quote.png")
+
+    e = discord.Embed(title = f"Member Quote", color = DEFAULT_COLOR, timestamp = datetime.now())
+    e.set_author(name = f"BotLobs", icon_url = bot.user.display_avatar.url) # type: ignore
+    
+    e.set_image(url = await upload_asset(bot, file))
+    await channel.send(embed = e)
+            
 class FunCommands(commands.Cog):
     
     def __init__(self, bot: commands.Bot, wakeup: asyncio.Event):
@@ -459,7 +506,7 @@ class FunCommands(commands.Cog):
             
             def __init__(self, game: Game2048, bot: commands.Bot):
                 
-                super().__init__(timeout = 120)
+                super().__init__(timeout = 300)
                 self.game = game
                 self.bot = bot
 
@@ -535,22 +582,24 @@ class FunCommands(commands.Cog):
             
             async def on_timeout(self):
                 
-                buffer = io.BytesIO()
-                img = draw_board(self.game.board)
-                img.save(buffer, format = "PNG")
-                buffer.seek(0)
-                
-                file = discord.File(buffer, filename = "two-o-four-eight-board.png")
-
-                e = discord.Embed(title = "2048 Game", color = DEFAULT_COLOR, timestamp = datetime.now())
-                e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
-            
-                e.description = f"### Game Over! (Timed Out)\n> - **Score**: **`{self.game.score}`**"
-                e.set_image(url = "attachment://two-o-four-eight-board.png")
-                
-                if interaction.response.is_done(): await interaction.edit_original_response(embed = e, view = self, attachments = [file])
-                else: await interaction.response.edit_message(embed = e, view = self, attachments = [file])
+                if not self.game.is_game_over():
                     
+                    buffer = io.BytesIO()
+                    img = draw_board(self.game.board)
+                    img.save(buffer, format = "PNG")
+                    buffer.seek(0)
+                    
+                    file = discord.File(buffer, filename = "two-o-four-eight-board.png")
+
+                    e = discord.Embed(title = "2048 Game", color = DEFAULT_COLOR, timestamp = datetime.now())
+                    e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore
+                
+                    e.description = f"### Game Over! (Timed Out)\n> - **Score**: **`{self.game.score}`**"
+                    e.set_image(url = "attachment://two-o-four-eight-board.png")
+                    
+                    if interaction.response.is_done(): await interaction.edit_original_response(embed = e, view = self, attachments = [file])
+                    else: await interaction.response.edit_message(embed = e, view = self, attachments = [file])
+                        
         game = Game2048()
         view = GameView(game, self.bot)
         
@@ -692,7 +741,6 @@ class FunCommands(commands.Cog):
             date = datetime.fromtimestamp(int(timestamp))
             footer = f"— {quote_author.name}, {date.strftime("%b %d %Y")} | Quote ID: {quote_id}" # type: ignore
             draw.text((200, 200), footer, font = small_font, fill = (200, 200, 200))
-        
             
             img.paste(avatar, (40, 80), avatar)
             
@@ -914,7 +962,7 @@ class FunCommands(commands.Cog):
             
             file = discord.File(buffer, filename = "tierlist.png")
             
-            expiry_timestamp = int(time.time() + 3600)
+            expiry_timestamp = int(time.time() + 10800)
             
             e = discord.Embed(title = f"Tierlist Generator", description = f'Generating using **live** mode.\n> - **How to Modify**: To add to the tierlist, user {interaction.user.mention} should ping the bot and add the tier in the message, like "{self.bot.user.mention}/add/Tier S". They should also attach the image to upload.\n> - **Time until Locked**: <t:{expiry_timestamp}:F> (<t:{expiry_timestamp}:R>)', color = DEFAULT_COLOR, timestamp = datetime.now()) # type: ignore
             e.set_author(name = f"BotLobs", icon_url = self.bot.user.display_avatar.url) # type: ignore

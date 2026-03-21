@@ -1,4 +1,4 @@
-# cogs > xp_commands.py // @toblobs // 18.03.26
+# cogs > xp_commands.py // @toblobs // 21.03.26
 
 from datetime import timedelta
 import time
@@ -29,6 +29,247 @@ from cogs.utils.permissions import *
 
 from database import XP_COOLDOWN, XP_ENABLED, XP_MIN, XP_MAX, dbio, leaderboard, rank, reward_roles, schema, sync, users, xp
 
+async def send_leaderboard_graph(bot, guild, channel, last = "daily"):
+    
+    time_periods = {"daily": 86400, "weekly": 604800, "monthly": 2592000, "all": 0}
+
+    # Work out last timestamp
+    if last != "all": 
+
+        period = last
+
+        timestamp = 0
+
+        now = int(time.time())
+        timestamp = now - time_periods[period]
+
+    else: 
+
+        period = "all"
+        timestamp = 0
+
+    # Defer if graph
+    page = 1
+    
+    if period != "all":
+        members = await leaderboard.time_filtered_leaderboard_page(timestamp, page - 1)
+    
+    else:
+        members = await leaderboard.time_filtered_leaderboard_page(timestamp, page = 0)
+    
+    member_ids = [int(m[0]) for m in members]
+
+    # Get member colors
+    
+    member_colors = {}
+
+    for member_id in member_ids:
+        
+        if guild: member = guild.get_member(member_id)
+
+        if member: # type: ignore
+            top_colored_role = get_top_colored_role(member)
+            
+            if top_colored_role: member_colors[member_id] = f"#{top_colored_role.color.value:06x}"
+            else: member_colors[member_id] = "#ffffff"
+
+    logs_query = await leaderboard.get_xp_logs(timestamp, member_ids)
+    xp_data = {}
+
+    for m in member_ids: xp_data[m] = []
+    cumulative = {m: 0 for m in member_ids}
+    
+    for (member_id, timestamp, xp) in logs_query: 
+        cumulative[member_id] += xp
+        xp_data[member_id].append((timestamp, cumulative[member_id]))
+
+    # Forward Fill
+    all_ts = [t for member_data in xp_data.values() for t, _ in member_data]
+    start_dt = datetime.fromtimestamp(min(all_ts))
+    end_dt = datetime.fromtimestamp(max(all_ts))
+    
+    if last != "all": 
+        hours = time_periods[period] / 86400 
+        
+    else: 
+        hours = time_periods["daily"] / 86400 # for all, default to monthly
+
+    interval = timedelta(hours = hours)
+    timeline = []
+
+    current = start_dt
+    while current <= end_dt:
+        timeline.append(current)
+        current += interval
+    
+    # Plot
+    fig, ax = plt.subplots()
+
+    for member_id, data in xp_data.items():
+        
+        data = xp_data[member_id]
+        if not data: continue
+
+        timestamp_to_xp = {datetime.fromtimestamp(t): xp for t, xp in data}
+
+        y_ff = []
+        last_xp = 0
+
+        for t in timeline:
+            
+            previous_times = [ts for ts in timestamp_to_xp if ts <= t]
+            if previous_times: last_xp = timestamp_to_xp[max(previous_times)]
+            y_ff.append(last_xp)
+
+        name = bot.get_guild(int(GUILD_ID)).get_member(member_id) # type: ignore
+        ax.plot(timeline, y_ff, label = name, color = member_colors.get(member_id, "#ffffff"))
+
+    plt.legend()
+    plt.xlabel("Time")
+    plt.ylabel("XP")
+
+    fig.patch.set_facecolor("#1a1a1e")
+    ax.set_facecolor("#1a1a1e")
+
+    ax.xaxis.label.set_color("white")
+    ax.yaxis.label.set_color("white")
+
+    ax.tick_params(axis = "both", colors = "white")
+
+    ax.grid(axis = "y", linestyle = "--", alpha = 0.2, color = "white")
+
+    for spine in ax.spines.values():
+        spine.set_color("white")
+
+    locator = mdates.AutoDateLocator()
+    formatter = mdates.ConciseDateFormatter(locator)
+
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(formatter)
+
+    ax.yaxis.set_major_locator(MaxNLocator(integer = True))
+    ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.0f}'))
+
+    legend = ax.legend(framealpha = 0, frameon = False, labelcolor = "white", fontsize = 11)
+    fig.autofmt_xdate()
+
+    plt.tight_layout()
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format = "png")
+    buffer.seek(0)
+
+    plt.close()
+
+    file = discord.File(buffer, filename = "leaderboard_graph.png")
+
+    e = discord.Embed(title = f"Server XP Leaderboard Graph", color = DEFAULT_COLOR, timestamp = datetime.now())
+    e.set_author(name = f"BotLobs", icon_url = bot.user.display_avatar.url) # type: ignore
+
+    e.set_image(url = await upload_asset(bot, file))
+    await channel.send(embed = e)
+
+async def send_curve_graph(bot, guild, channel):
+
+    page = 1
+    
+    members = await leaderboard.leaderboard_page(page - 1)
+    
+    member_ids = [int(m[0]) for m in members]
+    member_xps = [int(m[1]) for m in members]
+    member_levels = [int(m[2]) for m in members]
+    
+    member_partial_levels = []
+    
+    for i, member_xp in enumerate(member_xps):
+        
+        member_level = member_levels[i]
+
+        over_level = member_xp - xp.xp_required(member_level)
+
+        xp_to_next = xp.xp_required(member_level + 1) - xp.xp_required(member_level)
+        
+        partial_level = member_level + (over_level / xp_to_next)
+        
+        member_partial_levels.append(partial_level)
+        
+    # Get member colors
+        
+    member_colors = {}
+
+    for member_id in member_ids:
+        
+        if guild: member = guild.get_member(member_id)
+
+        if member: # type: ignore
+            top_colored_role = get_top_colored_role(member)
+            
+            if top_colored_role: member_colors[member_id] = f"#{top_colored_role.color.value:06x}"
+            else: member_colors[member_id] = "#ffffff"
+                
+    levels = np.arange(min(member_levels) - 2, max(member_levels) + 3)
+    
+    xp_exact = 1.5 * levels ** 3 + 15 * levels ** 2 + 150 * levels
+    
+    legend_lines = []
+
+    fig, ax = plt.subplots()
+    
+    ax.plot(levels, xp_exact, color = "white", linewidth = 2, zorder = 1)
+
+    for member_id in member_ids:
+        
+        member_obj = guild.get_member(member_id) # type: ignore
+        name = member_obj.name if member_obj else "???"
+        
+        member_level = member_partial_levels[member_ids.index(member_id)]
+        member_xp = member_xps[member_ids.index(member_id)]
+        
+        ax.scatter(member_level, member_xp, color = member_colors.get(member_id, "#ffffff"), s = 80, edgecolor = "white", zorder = 2, label = name)
+
+        legend_lines.append(Line2D([0], [0], color = member_colors.get(member_id, "#ffffff"), lw = 2, label = name))
+        
+    plt.legend()
+    plt.xlabel("Level")
+    plt.ylabel("XP")
+    
+    fig.patch.set_facecolor("#1a1a1e")
+    ax.set_facecolor("#1a1a1e")
+
+    ax.xaxis.label.set_color("white")
+    ax.yaxis.label.set_color("white")
+
+    ax.tick_params(axis = "both", colors = "white")
+    
+    ax.grid(axis = "x", linestyle = "--", alpha = 0.2, color = "white")
+    ax.grid(axis = "y", linestyle = "--", alpha = 0.2, color = "white")
+    
+    legend = ax.legend(handles = legend_lines, framealpha = 0, frameon = False, labelcolor = "white", fontsize = 10, loc = "upper left")
+    
+    for spine in ax.spines.values():
+        spine.set_color("white")
+        
+    ax.yaxis.set_major_locator(MaxNLocator(integer = True))
+    ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.0f}'))
+    
+    ax.annotate(r"$y = 1.5x^3 + 15x^2 + 150x$", ha = "center", xy = (0.5, 0), xycoords = "axes fraction", xytext = (0, -70), textcoords = "offset points", va = "bottom", color = "white", fontsize = 12)
+    
+    plt.tight_layout(pad = 2)
+    
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format = "png")
+    buffer.seek(0)
+
+    plt.close()
+    
+    file = discord.File(buffer, filename = "curve_graph.png")
+    
+    e = discord.Embed(title = f"Server XP Curve Graph", color = DEFAULT_COLOR, timestamp = datetime.now())
+    e.set_author(name = f"BotLobs", icon_url = bot.user.display_avatar.url) # type: ignore
+    
+    e.set_image(url = await upload_asset(bot, file))
+    await channel.send(embed = e)
+        
 class XPCommands(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
@@ -429,7 +670,6 @@ class XPCommands(commands.Cog):
             
             member_partial_levels.append(partial_level)
             
-
         # Get member colors
             
         member_colors = {}
@@ -774,6 +1014,12 @@ class XPCommands(commands.Cog):
         await interaction.response.send_message(embed = e)
 
     # /prestige-shop
+    @app_commands.command(name = "prestige-shop", description = "Purchase an item from the prestige shop.")
+    @app_commands.describe(item = "The item to purchase from the shop.")
+    async def prestige_shop(self, interaction: discord.Interaction, item: str = ""):
+        
+        await interaction.response.send_message(embed = basic_embed(title = "Try Again Later...", description = f"This command is under development along with the prestige system, for a future version. Check back soon!", bot = self.bot), ephemeral = True) # type: ignore
+        return
 
     # /black-tie
     @app_commands.command(name = "black-tie", description = "See your progress towards Black Tie.")

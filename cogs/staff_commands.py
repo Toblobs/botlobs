@@ -1,4 +1,4 @@
-# cogs > staff_commands.py // @toblobs // 18.03.26
+# cogs > staff_commands.py // @toblobs // 21.03.26
 
 from datetime import timedelta
 import time
@@ -586,6 +586,8 @@ class StaffCommands(commands.Cog):
     @app_commands.command(name = "lock", description = "Lock a given channel.")
     @app_commands.describe(channel = "The channel to lock", message = "The message to send on the lock embed", duration = "The time to lock them for, optional", reactions = "Whether to allow members to react to messages while channel is locked, optional")
     async def lock(self, interaction: discord.Interaction, message: str, channel: discord.TextChannel, duration: str = "1h", reactions: bool = False):
+        
+        guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
         
         await interaction.response.defer()
         
