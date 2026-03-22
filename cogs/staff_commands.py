@@ -710,7 +710,7 @@ class StaffCommands(commands.Cog):
                 
                 content = escape_mentions(remove_markdown(a_content))
                 
-                description += f"`{a_quote_id}` | {quote_author.mention} | {content}\n" # type: ignore
+                description += f"`{a_quote_id}` | {quote_author.mention if quote_author else "???"} | {content}\n" # type: ignore
 
             if all_length > 25: 
                 

@@ -120,6 +120,10 @@ class TobsCommands(commands.Cog):
     @app_commands.describe(send_embeds = "Send the startup embeds in relevant channels.")
     async def restart(self, interaction: discord.Interaction, send_embeds: bool = True):
         
+        if not toblobs_role in interaction.user.roles: # type: ignore
+            await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"This command is reserved for {toblobs_role.mention}.", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(roles = True)) # type: ignore
+            return
+        
         if send_embeds:
             
             await interaction.response.defer()

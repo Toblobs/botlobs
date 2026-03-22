@@ -37,10 +37,13 @@ from database import reminders, quotes
 async def send_qotd(bot, guild, channel):
     
     pool: list = list(await quotes.get_all_quotes()) or []
-        
-    (quote_id, user_id, message_id, content, timestamp) = random.choice(pool)
     
-    quote_author = guild.get_member(user_id) # type: ignore
+    quote_author = None
+    
+    while quote_author == None:
+        
+        (quote_id, user_id, message_id, content, timestamp) = random.choice(pool)
+        quote_author = guild.get_member(user_id) # type: ignore
 
     # Get avatar
     async with aiohttp.ClientSession() as session:
@@ -60,10 +63,10 @@ async def send_qotd(bot, guild, channel):
     try: small_font = ImageFont.truetype("fonts/arial.ttf", 18)
     except: small_font = ImageFont.load_default(size = 18)
     
-    wrapped = textwrap.fill(content, width = 30)
+    wrapped = textwrap.fill(content, width = 30) # type: ignore
     draw.text((200, 80), f'{wrapped}', font = font, fill = "white")
     
-    date = datetime.fromtimestamp(int(timestamp))
+    date = datetime.fromtimestamp(int(timestamp)) # type: ignore
     footer = f"— {quote_author.name}, {date.strftime("%b %d %Y")} | Quote ID: {quote_id}" # type: ignore
     draw.text((200, 200), footer, font = small_font, fill = (200, 200, 200))
     
@@ -706,16 +709,20 @@ class FunCommands(commands.Cog):
             
             guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
             
-            pool: list = list(await quotes.get_all_quotes()) or []
-            if member: pool = [p for p in pool if p[1] == member.id]
+            quote_author = None
             
-            if len(pool) == 0:
-                await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"Could not find any quotes {f" (for member {member.mention})" if member else ""}", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(users = True)) # type: ignore
-                return
+            while quote_author == None:
                 
-            (quote_id, user_id, message_id, content, timestamp) = random.choice(pool)
-            
-            quote_author = guild.get_member(user_id) # type: ignore
+                pool: list = list(await quotes.get_all_quotes()) or []
+                if member: pool = [p for p in pool if p[1] == member.id]
+                
+                if len(pool) == 0:
+                    await interaction.followup.send(embed = basic_embed(title = "Error Encountered!", description = f"Could not find any quotes {f" (for member {member.mention})" if member else ""}", bot = self.bot), ephemeral = True, allowed_mentions = discord.AllowedMentions(users = True)) # type: ignore
+                    return
+                    
+                (quote_id, user_id, message_id, content, timestamp) = random.choice(pool)
+                
+                quote_author = guild.get_member(user_id) # type: ignore
 
             # Get avatar
             async with aiohttp.ClientSession() as session:
@@ -735,10 +742,10 @@ class FunCommands(commands.Cog):
             try: small_font = ImageFont.truetype("fonts/arial.ttf", 18)
             except: small_font = ImageFont.load_default(size = 18)
             
-            wrapped = textwrap.fill(content, width = 30)
+            wrapped = textwrap.fill(content, width = 30) # type: ignore
             draw.text((200, 80), f'{wrapped}', font = font, fill = "white")
             
-            date = datetime.fromtimestamp(int(timestamp))
+            date = datetime.fromtimestamp(int(timestamp)) # type: ignore
             footer = f"— {quote_author.name}, {date.strftime("%b %d %Y")} | Quote ID: {quote_id}" # type: ignore
             draw.text((200, 200), footer, font = small_font, fill = (200, 200, 200))
             

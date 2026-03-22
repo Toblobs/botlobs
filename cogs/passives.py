@@ -6,6 +6,7 @@ import asyncio
 import io
 from discord.ext import tasks
 from datetime import time
+import re
 
 from cogs.general_commands import send_about, send_introduction, send_bot_status
 from cogs.xp_commands import send_leaderboard_graph, send_curve_graph
@@ -51,6 +52,8 @@ class Automation(commands.Cog):
         self.midnight_tracker.start()
         self.youtube_checker.start()
         self.last_video_id = None
+        
+        self.responded_to_ids = []
         
     async def cog_unload(self):
         
@@ -156,10 +159,6 @@ class Automation(commands.Cog):
         guild = self.bot.get_guild(int(GUILD_ID)) # type: ignore
         metrics_channel = self.bot.get_channel(1484642590115758210)
         
-        auqog = self.bot.get_user(750791037710106684)
-        blitz = self.bot.get_user(787716302357397524)
-        ryan = self.bot.get_user(554301090821308436)
-        
         average_custom = guild.get_role(1462161257045168283) # type: ignore
         
         response_map = {"meow": "meow :3",
@@ -177,7 +176,7 @@ class Automation(commands.Cog):
                         "theta": "nerf theta",
                         "president": "GET DOWN MR PRESIDENT",
                         "women": "nah i think im better than women",
-                        "men": f"{auqog.mention if auqog else "Auqog"}, {blitz.mention if blitz else "Blitz"}, {ryan.mention if ryan else "Ryan"}: 'where'",
+                        "men": f'Auqog, Blitz, Ryan: "where"',
                         "fog": "`t h e f o g i s c o m i n g`",
                         "sub": "*less",
                         "9/11": "but the mods hit the plane",
@@ -189,15 +188,22 @@ class Automation(commands.Cog):
                         "gng": "good night girl",
         }
         
+        def contains_phrase(text, phrase):
+            pattern = r"\b" + re.escape(phrase) + r"\b"
+            return re.search(pattern, text, re.IGNORECASE) is not None
+
         if message.author.bot: return
         if message.channel.id == SHADY_LOUNGE_ID:
             
             for key, resp in response_map.items():
                 
-                if key in message.content.lower():
+                if contains_phrase(message.content.lower(), key) and message.id not in self.responded_to_ids:
                     
                     if isinstance(resp, str): await message.reply(resp)
                     elif isinstance(resp, discord.Object): await message.reply(content = "", stickers = [resp]) # type: ignore
+                    
+                    self.responded_to_ids.append(message.id)
+                    
     
     @commands.Cog.listener()
     async def on_message_delete(self, interaction):
@@ -247,8 +253,9 @@ class Automation(commands.Cog):
         
         embed.add_field(name = "Before", value = before.content or "[Unknown]", inline = False)
         embed.add_field(name = "After", value = after.content or "[Unknown]", inline = False)
+        embed.add_field(name = "Link to Message", value = f"{after.jump_url}")
         
-        embed.set_footer(text = f"User ID: {before.author.id} | Channel: #{before.channel.name}")
+        embed.set_footer(text = f"User ID: {before.author.id}")
 
         await logs_channel.send(embed = embed) # type: ignore
     
@@ -346,3 +353,4 @@ class Automation(commands.Cog):
                             if not interaction.response.is_done(): await interaction.response.send_message(embed = basic_embed(title = "Role Selector", description = "You're not ranked high enough for this role yet.", bot = self.bot), ephemeral = True)
 
                 if found_role and not interaction.response.is_done(): await interaction.response.send_message(embed = basic_embed(title = "Role Selector", description = "Role added successfully!", bot = self.bot), ephemeral = True)
+                
